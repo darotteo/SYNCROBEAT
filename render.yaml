@@ -1,0 +1,20 @@
+# Deployment for Render (https://render.com). Import this repository there and it reads this file.
+# Rooms live in the server's memory, so there must be exactly one instance: two instances would put
+# the drummer and the guitarist of the same band in different rooms.
+services:
+  - type: web
+    name: syncrobeat
+    runtime: node
+    plan: starter # "free" also works, but a free instance sleeps and the first musician waits ~1 min
+    region: oregon
+    numInstances: 1
+    # --omit=dev keeps the build light: everything needed to compile is a real dependency, and the
+    # test tooling (which would download browsers) is not installed on the server
+    buildCommand: npm ci --omit=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
