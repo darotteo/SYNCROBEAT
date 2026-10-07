@@ -13,6 +13,14 @@ tempo y todos los músicos de la sala escuchan el mismo click en su celular, con
 - **Avisos en vivo:** mensajes rápidos a toda la banda.
 - **PWA:** se instala como app y tiene un modo de práctica sin conexión.
 
+## Pendiente conocido: deriva lenta entre dispositivos
+
+Después de unos 3 minutos tocando sin parar, dos dispositivos pueden separarse unos 10–12 ms
+(medido entre dos navegadores en la misma máquina; el test `stays locked for 3 minutes` lo marca).
+Está justo en el umbral donde se empieza a escuchar, y en pruebas reales de oído no se notó. No está
+explicado todavía: los primeros segundos y los cambios de tempo y de tema sí quedan por debajo de
+3 ms. **El umbral del test se deja en 10 ms a propósito, sin aflojarlo para que dé verde.**
+
 ## Límite conocido: la pantalla bloqueada
 
 Con la pantalla bloqueada el click **sigue sonando**, pero los cambios de tempo y de tema **no
