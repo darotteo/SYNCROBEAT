@@ -681,8 +681,12 @@ class AudioEngine {
     const sourceChanged = previousSource !== this.clockSource;
     // A median of the last few readings: single noisy samples (common while the audio hardware is
     // starting) cannot move the estimate, but a genuine shift is followed within a few ticks.
+    // The window spans ~225 ms of scheduler ticks: long enough to outvote a browser that reports
+    // its output timestamp one audio buffer (~21 ms on Windows) out of place for a moment, which
+    // would otherwise shift this device's clicks away from the rest of the band. A real route
+    // change moves the reading much further and is caught by the jump check below instead.
     this.recentInstants.push(instant);
-    if (this.recentInstants.length > 5) this.recentInstants.shift();
+    if (this.recentInstants.length > 9) this.recentInstants.shift();
     const sorted = [...this.recentInstants].sort((a, b) => a - b);
     instant = sorted[Math.floor(sorted.length / 2)];
 

@@ -1,6 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const PORT = Number(process.env.E2E_PORT) || 3123;
+// Point the suite at a deployed server instead of a local build:
+//   E2E_BASE_URL=https://syncrobeat.onrender.com npx playwright test sync --project=desktop
+const DEPLOYED = process.env.E2E_BASE_URL;
 // Uses the Chrome installed on the machine (no browser download). Set E2E_CHANNEL=msedge or
 // E2E_CHANNEL=chromium (after `npx playwright install chromium`) to switch.
 const channel = process.env.E2E_CHANNEL || 'chrome';
@@ -15,7 +18,7 @@ export default defineConfig({
   retries: 0,
   reporter: [['list']],
   use: {
-    baseURL: `http://127.0.0.1:${PORT}`,
+    baseURL: DEPLOYED || `http://127.0.0.1:${PORT}`,
     serviceWorkers: 'block',
     trace: 'retain-on-failure',
     locale: 'es-AR',
@@ -30,11 +33,13 @@ export default defineConfig({
     { name: 'safari-engine', use: { ...devices['Desktop Safari'] } },
     { name: 'iphone-engine', use: { ...devices['iPhone 14'] } },
   ],
-  webServer: {
-    command: 'node node_modules/tsx/dist/cli.mjs server.ts --prod',
-    url: `http://127.0.0.1:${PORT}/api/health`,
-    env: { PORT: String(PORT), NODE_ENV: 'production' },
-    reuseExistingServer: false,
-    timeout: 60_000,
-  },
+  webServer: DEPLOYED
+    ? undefined
+    : {
+        command: 'node node_modules/tsx/dist/cli.mjs server.ts --prod',
+        url: `http://127.0.0.1:${PORT}/api/health`,
+        env: { PORT: String(PORT), NODE_ENV: 'production' },
+        reuseExistingServer: false,
+        timeout: 60_000,
+      },
 });
