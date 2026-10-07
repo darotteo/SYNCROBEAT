@@ -27,19 +27,25 @@ export default defineConfig({
     { name: 'desktop', use: { ...devices['Desktop Chrome'], channel, launchOptions } },
     // Phone-sized layout with touch events (Chrome engine; real Android still needs a device)
     { name: 'mobile', use: { ...devices['Pixel 7'], channel, launchOptions } },
-    // WebKit is the engine Safari and every iPhone browser use. It catches Safari-specific bugs in
-    // JavaScript, CSS and Web Audio, but it is NOT an iPhone: audio session, silent switch,
-    // Bluetooth latency and the locked screen only behave for real on the device.
-    { name: 'safari-engine', use: { ...devices['Desktop Safari'] } },
-    { name: 'iphone-engine', use: { ...devices['iPhone 14'] } },
+    // WebKit is the engine Safari and every iPhone browser use, so it catches Safari-specific bugs
+    // in JavaScript, CSS and storage. It runs only the interface specs on purpose: the WebKit build
+    // Playwright ships for Windows has no working audio output, so the timing specs measure nothing
+    // there and fail for reasons that have nothing to do with the app. And even with audio it would
+    // not be an iPhone — audio session, silent switch, Bluetooth latency and the locked screen only
+    // behave for real on the device.
+    { name: 'safari-engine-ui', testMatch: /setlist\.spec\.ts/, use: { ...devices['Desktop Safari'] } },
+    { name: 'iphone-engine-ui', testMatch: /setlist\.spec\.ts/, use: { ...devices['iPhone 14'] } },
   ],
   webServer: DEPLOYED
     ? undefined
     : {
-        command: 'node node_modules/tsx/dist/cli.mjs server.ts --prod',
+        // Always rebuild: the server serves dist/, which is generated and therefore not in the
+        // repository. Without this the suite can run against a stale build, or against no build at
+        // all in a fresh checkout — which looks like dozens of unrelated test failures.
+        command: 'npm run build && node node_modules/tsx/dist/cli.mjs server.ts --prod',
         url: `http://127.0.0.1:${PORT}/api/health`,
         env: { PORT: String(PORT), NODE_ENV: 'production' },
         reuseExistingServer: false,
-        timeout: 60_000,
+        timeout: 180_000,
       },
 });

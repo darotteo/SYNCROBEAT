@@ -25,7 +25,12 @@ const isProduction = process.env.NODE_ENV === 'production' || process.argv.inclu
 const PORT = Number(process.env.PORT) || 3000;
 
 // Timing
-const PLAY_LEAD_MS = 400; // Delay before the first click so every client receives "play" in time
+// Delay before the first click. It covers both the time every client needs to receive "play" and
+// the time a phone's audio hardware needs to report its output latency honestly after starting:
+// measured on Chrome, the first readings are up to ~110 ms out and take about half a second to
+// settle. Schedule the first beat before that and it lands tens of ms off the grid, which cannot be
+// corrected afterwards because the beat is already due.
+const PLAY_LEAD_MS = 900;
 const CHANGE_LEAD_MS = 350; // Minimum notice before a tempo / song change takes effect
 
 // Limits & housekeeping

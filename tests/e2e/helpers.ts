@@ -99,8 +99,9 @@ export async function expectPulseAdvancing(page: Page) {
     .toBeGreaterThanOrEqual(2);
 }
 
+/** Epoch ms of the clicks that will be heard within a window. */
 export async function clicksBetween(page: Page, from: number, to: number): Promise<number[]> {
-  return page.evaluate(([a, b]) => (window as any).__clicks.filter((t: number) => t >= a && t <= b), [from, to]);
+  return (await audibleClicks(page)).filter((t) => t >= from && t <= to);
 }
 
 /**

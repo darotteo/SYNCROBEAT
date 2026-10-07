@@ -48,7 +48,9 @@ export interface UseSyncBeatReturn {
 }
 
 const OFFLINE_ID = 'local-musician';
-const OFFLINE_PLAY_LEAD_MS = 150;
+// Matches the server's lead: the audio clock needs about half a second after starting before it
+// reports its latency honestly, and the first beat must land after that. See PLAY_LEAD_MS.
+const OFFLINE_PLAY_LEAD_MS = 900;
 const OFFLINE_CHANGE_LEAD_MS = 200;
 
 function pickPlayback(state: PlaybackState): PlaybackState {
