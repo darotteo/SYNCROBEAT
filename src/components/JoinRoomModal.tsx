@@ -4,6 +4,7 @@ import { InstrumentType, INSTRUMENT_TYPES, NamedSetlist } from '../types/metrono
 import { INSTRUMENT_METADATA } from './InstrumentIcon';
 import { audioEngine } from '../utils/audioEngine';
 import { getClientId } from '../utils/clientId';
+import { apiUrl } from '../utils/serverUrl';
 import { cx } from './ui';
 import { SetlistPicker } from './SetlistPicker';
 import { Brand } from './Brand';
@@ -74,7 +75,7 @@ export const JoinRoomModal: React.FC<JoinRoomModalProps> = ({
     let cancelled = false;
     const check = async () => {
       try {
-        const res = await fetch(`/api/rooms/${encodeURIComponent(code)}?clientId=${encodeURIComponent(getClientId())}`);
+        const res = await fetch(apiUrl(`/api/rooms/${encodeURIComponent(code)}?clientId=${encodeURIComponent(getClientId())}`));
         const data = res.ok ? await res.json() : null;
         if (!cancelled) {
           setIsDrumsTaken(Boolean(data?.drumsTaken));

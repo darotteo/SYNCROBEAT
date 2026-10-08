@@ -1,0 +1,91 @@
+name: Android
+
+# Builds the Android app on GitHub's machines, so nothing has to be installed locally.
+#
+#   APK      - install it straight onto a phone to try the app. Always produced.
+#   AAB      - the file Google Play accepts. Only produced once the signing secrets below exist,
+#              because Play refuses an unsigned upload and an app signed with a throwaway key
+#              could never be updated.
+#
+# Signing secrets (Settings -> Secrets and variables -> Actions):
+#   ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+# Losing that keystore means losing the ability to update the published app, so it must be backed
+# up somewhere safe outside GitHub.
+
+on:
+  push:
+    branches: [main, android]
+  workflow_dispatch:
+
+env:
+  # Where the packaged app looks for rooms. It cannot use its own origin: inside the app that is
+  # the phone itself. See src/utils/serverUrl.ts.
+  VITE_SERVER_URL: https://syncrobeat.onrender.com
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check types
+        run: npm run lint
+
+      - name: Run unit tests
+        run: npm run test:unit
+
+      - name: Build the web app and copy it into the Android project
+        run: |
+          npm run build
+          npx cap sync android
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Build the installable APK
+        run: ./android/gradlew -p android assembleDebug
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: syncrobeat-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Is a signing key configured?
+        id: signing
+        run: echo "ready=${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the signing key
+        if: steps.signing.outputs.ready == 'true'
+        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/syncrobeat.keystore
+
+      - name: Build the signed bundle for Google Play
+        if: steps.signing.outputs.ready == 'true'
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./android/gradlew -p android bundleRelease
+
+      - uses: actions/upload-artifact@v4
+        if: steps.signing.outputs.ready == 'true'
+        with:
+          name: syncrobeat-play-bundle
+          path: android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+
+      - name: Clean up the signing key
+        if: always()
+        run: rm -f android/app/syncrobeat.keystore

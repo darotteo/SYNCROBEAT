@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Copy, Check, Share2 } from 'lucide-react';
 import { Button, Modal } from './ui';
+import { invitationUrl } from '../utils/serverUrl';
 
 interface ShareRoomModalProps {
   isOpen: boolean;
@@ -12,11 +13,7 @@ export const ShareRoomModal: React.FC<ShareRoomModalProps> = ({ isOpen, onClose,
   const [copied, setCopied] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
 
-  // In Google AI Studio the "dev-" preview URL is private; the "pre-" one can be opened from other devices
-  const origin = window.location.origin.includes('dev-')
-    ? window.location.origin.replace('dev-', 'pre-')
-    : window.location.origin;
-  const shareUrl = `${origin}/?room=${encodeURIComponent(roomId)}`;
+  const shareUrl = invitationUrl(roomId);
 
   useEffect(() => {
     if (!isOpen) return;

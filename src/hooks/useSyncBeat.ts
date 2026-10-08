@@ -17,6 +17,7 @@ import {
 import { audioEngine } from '../utils/audioEngine';
 import { monotonicNowMs, nextBarStart } from '../utils/timing';
 import { getClientId } from '../utils/clientId';
+import { roomSocketUrl } from '../utils/serverUrl';
 
 export interface UseSyncBeatReturn {
   isConnected: boolean;
@@ -227,8 +228,7 @@ export function useSyncBeat(): UseSyncBeatReturn {
     isDeliberateDisconnectRef.current = false;
     setIsConnecting(true);
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${protocol}//${window.location.host}/api/ws`);
+    const ws = new WebSocket(roomSocketUrl());
     socketRef.current = ws;
 
     ws.onopen = () => {
