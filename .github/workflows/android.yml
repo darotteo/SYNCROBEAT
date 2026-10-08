@@ -52,10 +52,17 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - uses: android-actions/setup-android@v3
+      # The Ubuntu runner already ships the Android SDK, so there is nothing to install: pointing
+      # Gradle at it and accepting the licences is enough, and it removes a moving part that
+      # broke the build. Gradle downloads any platform the project needs that is not there yet.
+      - name: Point Gradle at the SDK already on the runner
+        run: |
+          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
+          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
 
       - name: Build the installable APK
-        run: ./android/gradlew -p android assembleDebug
+        run: ./android/gradlew -p android assembleDebug --stacktrace
 
       - uses: actions/upload-artifact@v4
         with:
