@@ -21,6 +21,11 @@ import {
   defaultAccentPattern,
 } from './src/types/metronome.ts';
 import { nextBarStart } from './src/utils/timing.ts';
+import * as db from './server/db.ts';
+import { createAccounts } from './server/accounts.ts';
+import { createEntitlements } from './server/entitlements.ts';
+import { verifyGoogleIdToken } from './server/googleToken.ts';
+import { mountAuth } from './server/authRoutes.ts';
 
 const isProduction = process.env.NODE_ENV === 'production' || process.argv.includes('--prod');
 const PORT = Number(process.env.PORT) || 3000;
@@ -753,8 +758,34 @@ app.get('/api/health', (req, res) => {
     serverTime: Date.now(),
     activeRooms: rooms.size,
     connectedMusicians: clients.size,
+    accounts: accountsReady ? 'ready' : db.isConfigured() ? 'unavailable' : 'off',
   });
 });
+
+// ---------------------------------------------------------------------------
+// Accounts (paid plan only)
+// ---------------------------------------------------------------------------
+
+// Everything below is optional. With no database or no Google client id the server runs exactly as
+// it always has: solo practice, the free duo and joining by room code never touch any of it.
+const accounts = createAccounts(db.query);
+const entitlements = createEntitlements({ load: (accountId) => accounts.entitlementOf(accountId) });
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
+let accountsReady = false;
+
+if (db.isConfigured() && GOOGLE_CLIENT_ID) {
+  mountAuth(app, {
+    verifyToken: (credential) => verifyGoogleIdToken(credential, { clientId: GOOGLE_CLIENT_ID }),
+    accounts,
+    entitlementOf: (accountId) => entitlements.get(accountId),
+    isProduction,
+  });
+  accountsReady = true;
+  // Sessions expire on their own date; this only keeps the table from growing forever
+  setInterval(() => {
+    accounts.sweepExpiredSessions().catch((err) => console.error('Session sweep failed:', err.message));
+  }, 6 * 60 * 60_000).unref();
+}
 
 app.get('/api/rooms/:id', (req, res) => {
   const room = rooms.get(sanitizeRoomId(req.params.id));
@@ -801,6 +832,19 @@ async function startServer() {
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       res.sendFile(path.resolve('dist/index.html'));
     });
+  }
+
+  if (db.isConfigured()) {
+    try {
+      await db.migrate();
+      console.log('Accounts database ready');
+    } catch (err) {
+      // A database we cannot prepare must not stop the metronome: the free side needs none of it,
+      // and the paid gate already treats an unreachable database as "let them play".
+      console.error('Accounts database unavailable, continuing without it:', (err as Error).message);
+    }
+  } else {
+    console.log('No DATABASE_URL: running without accounts (free plan only)');
   }
 
   server.on('error', (err: NodeJS.ErrnoException) => {
