@@ -21,6 +21,7 @@ import { TempoControls } from './components/TempoControls';
 import { SignatureControls } from './components/SignatureControls';
 import { MusiciansList } from './components/MusiciansList';
 import { RehearsalCues } from './components/RehearsalCues';
+import { TunerPanel } from './components/TunerPanel';
 import { SetlistManager } from './components/SetlistManager';
 import { LocalAudioSettingsModal } from './components/LocalAudioSettingsModal';
 import { LatencyControl } from './components/LatencyControl';
@@ -32,7 +33,7 @@ import { DownloadAppModal } from './components/DownloadAppModal';
 import { StageMode } from './components/StageMode';
 import { IconButton, Segmented, cx } from './components/ui';
 
-type Tab = 'setlist' | 'band' | 'cues';
+type Tab = 'setlist' | 'band' | 'cues' | 'tuner';
 
 function readFlag(key: string, fallback: boolean) {
   try {
@@ -459,21 +460,25 @@ export default function App() {
             </div>
 
             <div className="lg:col-span-5 flex flex-col gap-4 lg:sticky lg:top-24">
-              {isOfflineMode ? (
-                <h2 className="px-1 text-xs font-medium uppercase tracking-[0.12em] text-neutral-500">Setlist</h2>
-              ) : (
-                <Segmented
-                  value={activeTab}
-                  onChange={setActiveTab}
-                  options={[
-                    { value: 'setlist', label: 'Setlist' },
-                    { value: 'band', label: `Banda · ${room.members.length}` },
-                    { value: 'cues', label: 'Avisos' },
-                  ]}
-                />
-              )}
+              <Segmented
+                value={activeTab}
+                onChange={setActiveTab}
+                options={
+                  isOfflineMode
+                    ? [
+                        { value: 'setlist', label: 'Setlist' },
+                        { value: 'tuner', label: 'Afinador' },
+                      ]
+                    : [
+                        { value: 'setlist', label: 'Setlist' },
+                        { value: 'band', label: `Banda · ${room.members.length}` },
+                        { value: 'cues', label: 'Avisos' },
+                        { value: 'tuner', label: 'Afinador' },
+                      ]
+                }
+              />
 
-              {(isOfflineMode || activeTab === 'setlist') && (
+              {activeTab === 'setlist' && (
                 <SetlistManager
                   room={room}
                   onSelectSong={selectSong}
@@ -495,6 +500,8 @@ export default function App() {
               )}
 
               {!isOfflineMode && activeTab === 'cues' && <RehearsalCues recentCues={room.recentCues} onSendCue={sendCue} />}
+
+              {activeTab === 'tuner' && <TunerPanel isPlaying={room.isPlaying} />}
             </div>
           </div>
         ) : (
