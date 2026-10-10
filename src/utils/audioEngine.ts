@@ -104,8 +104,12 @@ class AudioEngine {
   private voiceRequested = new Set<string>();
 
   // Synchronization
-  private segment: Segment | null = null;
-  private prevSegment: Segment | null = null; // Keeps clicking until `segment.start` after a tempo change
+  /**
+   * Tempo timeline in ascending `start` order: [0] is what is sounding now, the rest are hand-overs
+   * still ahead. More than one can be pending, because the server anchors each new bar line on the
+   * tempo it expects to be running by then — dropping the middle one would shift every later bar.
+   */
+  private timeline: Segment[] = [];
   private serverTimeOffset: number = 0; // serverTime - monotonicNowMs()
   private hasServerTimeOffset: boolean = false;
   private clockSource: 'output' | 'reported' = 'reported';
@@ -402,6 +406,7 @@ class AudioEngine {
       try {
         if (!this.inputNode) {
           this.inputNode = ctx.createGain();
+          this.inputNode.gain.setValueAtTime(1.0, ctx.currentTime);
         }
         this.inputNode.connect(ctx.destination);
       } catch {}
@@ -438,6 +443,11 @@ class AudioEngine {
     return this.inputNode!;
   }
 
+  // NOTE: mute and volume still only take effect on clicks scheduled from here on, so a change is
+  // heard up to SCHEDULE_AHEAD_SEC late, and unmuting lands in a hole. Moving them onto the shared
+  // input node fixes that but cost 37 ms of drift between two devices over three minutes in
+  // tests/e2e/sync.spec.ts, so it was pulled. A fix has to leave the master chain alone: give each
+  // queued voice a handle and retune the voices in `pendingVoices` instead.
   public setMuted(muted: boolean) {
     this.isMuted = muted;
   }
@@ -811,20 +821,30 @@ class AudioEngine {
       countInBeats: state.countInBeats || 0,
     };
 
-    if (this.isRunning && this.segment) {
-      if (JSON.stringify(next) === JSON.stringify(this.segment)) return;
-      if (next.start !== this.segment.start) {
-        const changeIsAhead = next.start > this.serverNow() && this.segment.start < next.start;
-        this.prevSegment = changeIsAhead ? this.segment : null;
-      }
-      this.segment = next;
+    if (this.isRunning && this.timeline.length) {
+      const newest = this.timeline[this.timeline.length - 1];
+      if (JSON.stringify(next) === JSON.stringify(newest)) return;
+      // A hand-over replaces any planned at or after its own instant, and leaves the earlier ones
+      // alone: whatever is clicking right now has to keep clicking until its own hand-over arrives.
+      this.timeline = this.timeline.filter((s) => s.start < next.start);
+      this.timeline.push(next);
+      this.dropElapsedSegments();
       this.reschedule();
       return;
     }
 
-    this.segment = next;
-    this.prevSegment = null;
+    this.timeline = [next];
     this.start();
+  }
+
+  /** Keeps the segment sounding now plus every hand-over still ahead; forgets the ones already over. */
+  private dropElapsedSegments() {
+    const serverNow = this.serverNow();
+    let sounding = 0;
+    for (let i = 0; i < this.timeline.length; i++) {
+      if (this.timeline[i].start <= serverNow) sounding = i;
+    }
+    if (sounding > 0) this.timeline.splice(0, sounding);
   }
 
   private start() {
@@ -850,8 +870,7 @@ class AudioEngine {
 
   public stop() {
     this.isRunning = false;
-    this.segment = null;
-    this.prevSegment = null;
+    this.timeline = [];
     this.cancelFutureVoices(true);
     this.scheduledAudioBeats.clear();
 
@@ -944,7 +963,8 @@ class AudioEngine {
   }
 
   private scheduler() {
-    if (!this.isRunning || !this.segment) return;
+    if (!this.isRunning || !this.timeline.length) return;
+    this.dropElapsedSegments();
 
     const ctx = this.getAudioContext();
     // Visual beats keep following the shared clock even while the audio is blocked or recovering
@@ -957,13 +977,11 @@ class AudioEngine {
     const audioWindowEndMs = serverNow + this.SCHEDULE_AHEAD_SEC * 1000;
     const visualWindowEndMs = serverNow + this.SHORT_WINDOW_MS;
 
-    const plans: { seg: Segment; end: number }[] = [];
-    if (this.prevSegment && this.prevSegment.start < this.segment.start && serverNow < this.segment.start) {
-      plans.push({ seg: this.prevSegment, end: this.segment.start });
-    } else {
-      this.prevSegment = null;
-    }
-    plans.push({ seg: this.segment, end: Infinity });
+    // Each segment clicks until the next hand-over; the last one runs on until the room changes it
+    const plans: { seg: Segment; end: number }[] = this.timeline.map((seg, i) => ({
+      seg,
+      end: this.timeline[i + 1]?.start ?? Infinity,
+    }));
 
     for (const { seg, end } of plans) {
       const subPerBeat = parseInt(seg.subdivision, 10) || 1;

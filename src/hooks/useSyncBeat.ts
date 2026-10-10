@@ -45,6 +45,7 @@ export interface UseSyncBeatReturn {
   selectSong: (songId: string) => void;
   updateSetlist: (setlist: SongItem[], meta?: { id: string | null; name: string | null }) => void;
   updateProfile: (name: string, instrument: InstrumentType) => void;
+  setHost: (memberId: string) => void;
   activeCue: RehearsalCue | null;
 }
 
@@ -642,6 +643,14 @@ export function useSyncBeat(): UseSyncBeatReturn {
     [send]
   );
 
+  /** Hands the room over to another musician; the server only honours it from the current host. */
+  const setHost = useCallback(
+    (memberId: string) => {
+      send({ type: 'setHost', memberId });
+    },
+    [send]
+  );
+
   return {
     isConnected,
     isConnecting,
@@ -667,6 +676,7 @@ export function useSyncBeat(): UseSyncBeatReturn {
     sendCue,
     selectSong,
     updateSetlist,
+    setHost,
     updateProfile,
     activeCue,
   };

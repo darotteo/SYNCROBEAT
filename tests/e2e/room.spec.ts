@@ -36,7 +36,8 @@ test('band rehearsal: prepared setlist, roles, shared pulse in sync, tempo and s
   await expect(guitar.getByText('Esta sala ya tiene baterista')).toBeVisible();
   await joinRoom(guitar, { room, name: 'Beto', instrument: 'Guitarra' });
   await expect(guitar.getByText('Ensayo viernes')).toBeVisible();
-  await expect(guitar.getByText('Ana (batería) controla el tempo.')).toBeVisible();
+  // Ana opened the room, so she runs it; the instrument has nothing to do with it
+  await expect(guitar.getByText('Ana dirige la sala y controla el tempo.')).toBeVisible();
   await expect(guitar.getByRole('button', { name: 'Iniciar' })).toHaveCount(0);
   await expect(guitar.getByRole('button', { name: 'Sumar 5 BPM' })).toHaveCount(0);
 

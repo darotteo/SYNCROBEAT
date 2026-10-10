@@ -356,6 +356,34 @@ test('personal fine offset plays the click earlier and is applied live', () => {
   engine.stop();
 });
 
+test('two tempo changes in a row keep clicking the tempo that is still sounding', () => {
+  // Audit case: a second change arriving while the first was still pending used to overwrite the
+  // segment that was actually clicking, leaving a hole until the first change's bar line.
+  const { engine, ctx, clicks, playback } = fixture();
+  const sixteenths = { ...playback, subdivision: '4' as const }; // 125 ms apart at 120 BPM
+  engine.setPlayback(sixteenths);
+  run(engine, ctx, 900);
+  engine.setPlayback({ ...sixteenths, bpm: 100, startServerTime: epoch + 2200 });
+  run(engine, ctx, 1900);
+  engine.setPlayback({ ...sixteenths, bpm: 110, startServerTime: epoch + 4600 });
+  run(engine, ctx, 2400);
+
+  const keys = new Set(active(clicks).map((c) => c.key));
+  // 1700, 1825, 1950 and 2075 ms all belong to the 120 BPM segment that hands over at 2200
+  for (const i of [12, 13, 14, 15]) {
+    assert.ok(keys.has(`${epoch + 200}_120_4_${i}`), `sixteenth ${i} of the sounding tempo went missing`);
+  }
+  // The superseded change still happens: the server anchored 4600 on 100 BPM running from 2200
+  assert.ok(keys.has(`${epoch + 2200}_100_4_0`), 'the pending hand-over was dropped instead of kept');
+
+  const times = active(clicks).map((c) => c.time).sort((a, b) => a - b);
+  for (let i = 1; i < times.length; i++) {
+    const gapMs = Math.round((times[i] - times[i - 1]) * 1000);
+    assert.ok(gapMs <= 160, `a ${gapMs} ms hole opened between two clicks`);
+  }
+  engine.stop();
+});
+
 test('stop cancels every queued click and visual beat', () => {
   const { engine, ctx, clicks, playback } = fixture();
   engine.setPlayback(playback);

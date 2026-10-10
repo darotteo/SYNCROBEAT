@@ -207,7 +207,7 @@ export const StageMode: React.FC<StageModeProps> = ({
         </div>
       ) : (
         <div className="relative p-6 text-center text-lg text-neutral-500">
-          {controllerName ? `${controllerName} controla el tempo` : 'Esperando al baterista'}
+          {controllerName ? `${controllerName} controla el tempo` : 'Esperando a quien dirija la sala'}
         </div>
       )}
     </div>

@@ -180,7 +180,7 @@ const TempoControlsComponent: React.FC<TempoControlsProps> = ({
             {isPlaying ? 'Sonando' : 'Detenido'}
           </span>
           <p className="text-xs text-neutral-500">
-            {controllerName ? `${controllerName} (batería) controla el tempo.` : 'Esperando al baterista para controlar el tempo.'}
+            {controllerName ? `${controllerName} dirige la sala y controla el tempo.` : 'Esperando a quien dirija la sala.'}
           </p>
         </div>
       )}

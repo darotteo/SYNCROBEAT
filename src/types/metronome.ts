@@ -99,7 +99,8 @@ export type WSClientMessage =
   // Without setlistId/setlistName the room keeps its current name (plain edits)
   | { type: 'updateSetlist'; setlist: SongItem[]; setlistId?: string | null; setlistName?: string | null }
   | { type: 'selectSong'; songId: string }
-  | { type: 'updateMember'; name?: string; instrument?: InstrumentType };
+  | { type: 'updateMember'; name?: string; instrument?: InstrumentType }
+  | { type: 'setHost'; memberId: string };
 
 export type WSServerMessage =
   | { type: 'device_session'; deviceToken: string }

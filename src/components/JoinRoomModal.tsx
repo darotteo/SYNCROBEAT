@@ -62,6 +62,8 @@ export const JoinRoomModal: React.FC<JoinRoomModalProps> = ({
   const [isDrumsTaken, setIsDrumsTaken] = useState(false);
   const [roomHasSetlist, setRoomHasSetlist] = useState(false);
   const [roomPlan, setRoomPlan] = useState<'free' | 'pro' | null>(null);
+  // Nobody inside yet, so this join opens the room and gets to run it
+  const [willOpenRoom, setWillOpenRoom] = useState(true);
   const [selectedSetlist, setSelectedSetlist] = useState<NamedSetlist | undefined>();
 
   // Check whether the room already has a drummer
@@ -72,6 +74,7 @@ export const JoinRoomModal: React.FC<JoinRoomModalProps> = ({
       setIsDrumsTaken(false);
       setRoomHasSetlist(false);
       setRoomPlan(null);
+      setWillOpenRoom(true);
       return;
     }
     let cancelled = false;
@@ -83,12 +86,14 @@ export const JoinRoomModal: React.FC<JoinRoomModalProps> = ({
           setIsDrumsTaken(Boolean(data?.drumsTaken));
           setRoomHasSetlist(Boolean(data?.setlistCount));
           setRoomPlan(data?.memberLimit === 2 ? 'free' : data?.plan === 'pro' ? 'pro' : null);
+          setWillOpenRoom(!data?.membersCount);
         }
       } catch {
         if (!cancelled) {
           setIsDrumsTaken(false);
           setRoomHasSetlist(false);
           setRoomPlan(null);
+          setWillOpenRoom(true);
         }
       }
     };
@@ -200,17 +205,15 @@ export const JoinRoomModal: React.FC<JoinRoomModalProps> = ({
 
           <p className="text-xs text-neutral-400 text-center -mt-1">
             {isDrumsTaken
-              ? 'Esta sala ya tiene baterista, que es quien controla el tempo.'
-              : instrument === 'drums'
-              ? 'Como baterista vas a controlar el tempo de la banda.'
-              : 'El baterista de la sala controla el tempo.'}
+              ? 'Esta sala ya tiene baterista. Elegí otro instrumento.'
+              : 'Quien abre la sala la dirige, toque lo que toque, y después puede pasarle el control a cualquiera.'}
           </p>
 
           {error && <p className="text-sm text-rose-300 text-center">{error}</p>}
           {roomPlan && <p className="text-xs text-neutral-400 text-center">{roomPlan === 'free' ? 'Hasta 2 integrantes gratis por sala. Desde el tercero, SyncroBeat Pro.' : 'Sala Pro habilitada para esta prueba.'}</p>}
         </form>
 
-        <SetlistPicker onChange={setSelectedSetlist} canUseInRoom={instrument === 'drums'} roomHasSetlist={roomHasSetlist} />
+        <SetlistPicker onChange={setSelectedSetlist} canUseInRoom={willOpenRoom} roomHasSetlist={roomHasSetlist} />
 
           <button
             type="submit"
