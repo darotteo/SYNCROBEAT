@@ -341,7 +341,7 @@ class AudioEngine {
   private initMasterChain(ctx: AudioContext) {
     try {
       this.inputNode = ctx.createGain();
-      this.inputNode.gain.setValueAtTime(this.userGain(), ctx.currentTime);
+      this.inputNode.gain.setValueAtTime(1.0, ctx.currentTime);
 
       if (isIOSDevice()) {
         // Safe, clean chain for iOS to prevent WebKit AudioNode bugs/silence
@@ -406,7 +406,7 @@ class AudioEngine {
       try {
         if (!this.inputNode) {
           this.inputNode = ctx.createGain();
-          this.inputNode.gain.setValueAtTime(this.userGain(), ctx.currentTime);
+          this.inputNode.gain.setValueAtTime(1.0, ctx.currentTime);
         }
         this.inputNode.connect(ctx.destination);
       } catch {}
@@ -443,27 +443,13 @@ class AudioEngine {
     return this.inputNode!;
   }
 
-  /**
-   * Volume and mute ride on the shared input node instead of on each click, so a change also
-   * reaches the clicks already queued (the scheduler works up to `SCHEDULE_AHEAD_SEC` ahead).
-   */
-  private userGain(): number {
-    return this.isMuted ? 0 : this.volume;
-  }
-
-  private applyUserGain() {
-    if (!this.inputNode || !this.ctx) return;
-    const now = this.ctx.currentTime;
-    try {
-      this.inputNode.gain.cancelScheduledValues(now);
-      // A few ms of ramp: perceptually immediate, without the click a hard step would make
-      this.inputNode.gain.setTargetAtTime(this.userGain(), now, 0.008);
-    } catch {}
-  }
-
+  // NOTE: mute and volume still only take effect on clicks scheduled from here on, so a change is
+  // heard up to SCHEDULE_AHEAD_SEC late, and unmuting lands in a hole. Moving them onto the shared
+  // input node fixes that but cost 37 ms of drift between two devices over three minutes in
+  // tests/e2e/sync.spec.ts, so it was pulled. A fix has to leave the master chain alone: give each
+  // queued voice a handle and retune the voices in `pendingVoices` instead.
   public setMuted(muted: boolean) {
     this.isMuted = muted;
-    this.applyUserGain();
   }
 
   public getMuted(): boolean {
@@ -472,7 +458,6 @@ class AudioEngine {
 
   public setVolume(vol: number) {
     this.volume = Math.max(0, Math.min(1, vol));
-    this.applyUserGain();
     try {
       localStorage.setItem('syncbeat_audio_volume', String(this.volume));
     } catch {}
@@ -573,7 +558,7 @@ class AudioEngine {
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     const gain = ctx.createGain();
-    gain.gain.setValueAtTime(1.6, time); // Volume lives on the shared input node
+    gain.gain.setValueAtTime(this.volume * 1.6, time);
     source.connect(gain);
     gain.connect(this.getMasterInputNode());
     source.start(time);
@@ -1036,8 +1021,7 @@ class AudioEngine {
           !this.scheduledAudioBeats.has(key)
         ) {
           this.scheduledAudioBeats.add(key);
-          // Queued even while muted: mute is a gain, so unmuting is heard on the very next click
-          if (accentLevel > 0) {
+          if (!this.isMuted && accentLevel > 0) {
             const playTime = this.serverToAudioTime(audioServerMs);
             // Never bunch missed beats into immediate clicks after a stall.
             if (playTime >= audioNow + 0.003) {
@@ -1132,7 +1116,7 @@ class AudioEngine {
     const masterInput = this.getMasterInputNode();
 
     const voiceGain = ctx.createGain();
-    voiceGain.gain.setValueAtTime(1, time); // Volume lives on the shared input node
+    voiceGain.gain.setValueAtTime(this.volume, time);
     voiceGain.connect(masterInput);
 
     if (key) {
