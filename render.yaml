@@ -5,7 +5,10 @@ services:
   - type: web
     name: syncrobeat
     runtime: node
-    plan: starter # "free" also works, but a free instance sleeps and the first musician waits ~1 min
+    # Matches the running service. A free instance sleeps after 15 minutes idle, so the first
+    # musician to arrive waits for it to wake; during a rehearsal the open sockets keep it awake.
+    # Moving to "starter" removes that wait and starts charging, so it stays a deliberate choice.
+    plan: free
     region: oregon
     numInstances: 1
     # --omit=dev keeps the build light: everything needed to compile is a real dependency, and the
