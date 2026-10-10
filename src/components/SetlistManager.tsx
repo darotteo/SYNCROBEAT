@@ -16,6 +16,7 @@ import {
   FolderOpen,
   Save,
   ListMusic,
+  GripVertical,
 } from 'lucide-react';
 import { SongItem, RoomState, TimeSignature, Subdivision, NamedSetlist, MIN_BPM, MAX_BPM, COMMON_SIGNATURES, defaultAccentPattern } from '../types/metronome';
 import { loadSetlistLibrary, upsertSetlist, newSetlistId, saveLastSelectedSetlistId, syncSavedSetlist } from '../utils/setlistLibrary';
@@ -284,13 +285,71 @@ const SetlistManagerComponent: React.FC<SetlistManagerProps> = ({
     setEditingId(null);
   };
 
-  const handleMove = (index: number, dir: -1 | 1) => {
-    const target = index + dir;
-    if (target < 0 || target >= list.length) return;
+  const moveTo = (from: number, to: number) => {
+    if (from === to || from < 0 || from >= list.length || to < 0 || to >= list.length) return;
     const next = [...list];
-    const [moved] = next.splice(index, 1);
-    next.splice(target, 0, moved);
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
     commit(next);
+  };
+
+  const handleMove = (index: number, dir: -1 | 1) => moveTo(index, index + dir);
+
+  // --- Drag to reorder -----------------------------------------------------
+  // Pointer events rather than HTML5 drag-and-drop, which does not fire on touch screens: this list
+  // is mostly reordered on a phone during rehearsal.
+  const rowRefs = useRef(new Map<string, HTMLLIElement | null>());
+  const rowMidpoints = useRef<number[]>([]);
+  // The live drag is held in a ref as well as in state: pointer moves must not depend on a re-render
+  // having happened, or the first move of a gesture reads a stale `drag` and is dropped.
+  const dragRef = useRef<{ id: string; to: number } | null>(null);
+  const [drag, setDrag] = useState<{ id: string; to: number } | null>(null);
+
+  const dragOrder = useMemo(() => {
+    if (!drag) return list;
+    const from = list.findIndex((s) => s.id === drag.id);
+    if (from === -1 || from === drag.to) return list;
+    const next = [...list];
+    const [moved] = next.splice(from, 1);
+    next.splice(drag.to, 0, moved);
+    return next;
+  }, [drag, list]);
+
+  const startDrag = (e: React.PointerEvent, song: SongItem, index: number) => {
+    if (!canEdit || list.length < 2) return;
+    const rects = list.map((s) => rowRefs.current.get(s.id)?.getBoundingClientRect());
+    if (rects.some((r) => !r)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    // Midpoints are measured once, so the rows shifting under the finger cannot feed back into the aim
+    rowMidpoints.current = rects.map((r) => r!.top + r!.height / 2);
+    // Capture keeps the moves coming to this handle even when the finger outruns the row.
+    // It throws if the pointer is already gone, which must not abort the drag itself.
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {}
+    dragRef.current = { id: song.id, to: index };
+    setDrag(dragRef.current);
+  };
+
+  const moveDrag = (e: React.PointerEvent) => {
+    const current = dragRef.current;
+    if (!current) return;
+    const midpoints = rowMidpoints.current;
+    const above = midpoints.findIndex((mid) => e.clientY < mid);
+    const to = above === -1 ? midpoints.length - 1 : above;
+    if (to !== current.to) {
+      dragRef.current = { ...current, to };
+      setDrag(dragRef.current);
+    }
+  };
+
+  const endDrag = () => {
+    const current = dragRef.current;
+    if (!current) return;
+    dragRef.current = null;
+    setDrag(null);
+    moveTo(list.findIndex((s) => s.id === current.id), current.to);
   };
 
   const handleDuplicate = (song: SongItem, index: number) => {
@@ -494,14 +553,14 @@ const SetlistManagerComponent: React.FC<SetlistManagerProps> = ({
           </p>
         </div>
       ) : (
-        <ol className="flex flex-col gap-1">
-          {list.map((song, index) => {
+        <ol className={cx('flex flex-col gap-1', drag && 'select-none')}>
+          {dragOrder.map((song, index) => {
             const isCurrent = !preparation && room.currentSongId === song.id;
             const isEditing = editingId === song.id;
 
             if (isEditing) {
               return (
-                <li key={song.id}>
+                <li key={song.id} ref={(el) => { rowRefs.current.set(song.id, el); }}>
                   <SongEditor
                     initial={draftFromSong(song)}
                     submitLabel="Guardar"
@@ -534,12 +593,14 @@ const SetlistManagerComponent: React.FC<SetlistManagerProps> = ({
               );
             }
 
+            const isDragging = drag?.id === song.id;
+
             return (
-              <li key={song.id}>
+              <li key={song.id} ref={(el) => { rowRefs.current.set(song.id, el); }}>
                 <div
                   role={canSelect ? 'button' : undefined}
                   tabIndex={canSelect ? 0 : undefined}
-                  onClick={() => canSelect && onSelectSong(song.id)}
+                  onClick={() => canSelect && !drag && onSelectSong(song.id)}
                   onKeyDown={(e) => {
                     if (canSelect && (e.key === 'Enter' || e.key === ' ')) {
                       e.preventDefault();
@@ -547,11 +608,37 @@ const SetlistManagerComponent: React.FC<SetlistManagerProps> = ({
                     }
                   }}
                   className={cx(
-                    'group flex items-center gap-3 pl-3 pr-1 py-2.5 rounded-2xl transition-colors',
+                    'group flex items-center gap-3 pr-1 py-2.5 rounded-2xl transition-colors',
+                    canEdit ? 'pl-0.5' : 'pl-3',
                     isCurrent ? 'bg-surface-2' : canSelect ? 'hover:bg-surface-2/60' : '',
-                    canSelect && 'cursor-pointer'
+                    canSelect && !drag && 'cursor-pointer',
+                    isDragging && 'bg-surface-3 shadow-lg ring-1 ring-accent/40'
                   )}
                 >
+                  {canEdit && (
+                    <button
+                      type="button"
+                      aria-label={`Mover ${song.title}. Arrastrá, o usá las flechas arriba y abajo.`}
+                      onPointerDown={(e) => startDrag(e, song, index)}
+                      onPointerMove={moveDrag}
+                      onPointerUp={endDrag}
+                      onPointerCancel={endDrag}
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        moveTo(index, index + (e.key === 'ArrowUp' ? -1 : 1));
+                      }}
+                      className={cx(
+                        'shrink-0 p-1.5 rounded-xl text-neutral-600 touch-none',
+                        'hover:text-neutral-300 hover:bg-surface-3 focus-visible:text-neutral-300',
+                        isDragging ? 'cursor-grabbing text-accent' : 'cursor-grab'
+                      )}
+                    >
+                      <GripVertical className="w-4 h-4" />
+                    </button>
+                  )}
                   <span className={cx('w-6 text-right text-sm tabular-nums shrink-0', isCurrent ? 'text-accent' : 'text-neutral-600')}>
                     {index + 1}
                   </span>
