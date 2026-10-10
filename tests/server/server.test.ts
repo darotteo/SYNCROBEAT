@@ -64,7 +64,7 @@ test('join: invalid room code is rejected; garbage input never crashes the serve
   assert.ok(pong, 'server still answering');
 });
 
-test('roles: only the drummer controls playback, tempo, meter, setlist and songs', async () => {
+test('roles: only the host controls playback, tempo, meter, setlist and songs', async () => {
   const room = newRoom();
   const drummer = track(await join(srv.wsUrl, room, 'roles-drum-1', 'drums', { initialSetlist: { id: 'l1', name: 'Lista', songs: [song('a', 100), song('b', 140)] } }));
   const guitar = track(await join(srv.wsUrl, room, 'roles-gtr-1', 'guitar'));
@@ -80,13 +80,42 @@ test('roles: only the drummer controls playback, tempo, meter, setlist and songs
     { type: 'selectSong', songId: 'b' },
   ]) {
     const err = await guitar.c.request(msg, isError);
-    assert.match(err.message, /baterista/i, `${msg.type} must be refused`);
+    assert.match(err.message, /dirige la sala/i, `${msg.type} must be refused`);
   }
   assert.ok(await drummer.c.expectNothing(isPlayback, 200), 'refused actions are not broadcast');
   const meta = await fetch(`${srv.url}/api/rooms/${room}`).then((r) => r.json());
   assert.equal(meta.bpm, 100);
   assert.equal(meta.isPlaying, false);
   assert.equal(meta.setlistCount, 2);
+});
+
+test('the host can hand the room to a musician who is not the drummer', async () => {
+  const room = newRoom();
+  const drummer = track(await join(srv.wsUrl, room, 'host-drum-1', 'drums'));
+  const guitar = track(await join(srv.wsUrl, room, 'host-gtr-1', 'guitar'));
+  // The first to arrive runs the room
+  assert.equal(drummer.state.leaderId, 'host-drum-1');
+
+  // Nobody else can take it
+  const stolen = await guitar.c.request({ type: 'setHost', memberId: 'host-gtr-1' }, isError);
+  assert.match(stolen.message, /dirige la sala/i);
+
+  const handed = await drummer.c.request(
+    { type: 'setHost', memberId: 'host-gtr-1' },
+    (m) => m.type === 'members_update'
+  );
+  assert.deepEqual(
+    handed.members.filter((m: any) => m.isLeader).map((m: any) => m.id),
+    ['host-gtr-1'],
+    'exactly one member leads the room'
+  );
+
+  // The guitarist now drives it, and the drummer no longer does
+  await guitar.c.request({ type: 'setBpm', bpm: 96 }, isPlayback);
+  const refused = await drummer.c.request({ type: 'setBpm', bpm: 140 }, isError);
+  assert.match(refused.message, /dirige la sala/i);
+  const meta = await fetch(`${srv.url}/api/rooms/${room}`).then((r) => r.json());
+  assert.equal(meta.bpm, 96);
 });
 
 test('only one drummer per room; the same device can reclaim its seat', async () => {
@@ -237,19 +266,19 @@ test('selectSong applies the song settings and announces it to everybody', async
   await assert.rejects(err, /Timed out/, 'unknown song ignored');
 });
 
-test('prepared setlist: drummer only, empty stopped room only, rejoin preserves, legacy array accepted', async () => {
+test('prepared setlist: host only, empty stopped room only, rejoin preserves, legacy array accepted', async () => {
   const room = newRoom();
   const prepared = { id: 'check-list', name: 'Prueba', songs: [song('test-song', 93, 3)] };
+  // Whoever opens the room seeds it, drummer or not
   const gtr = track(await join(srv.wsUrl, room, 'prep-gtr-1', 'guitar', { initialSetlist: prepared }));
-  assert.equal(gtr.state.setlist.length, 0, 'Only a drummer can initialize the room list');
-  const drum = track(await join(srv.wsUrl, room, 'prep-drum-1', 'drums', { initialSetlist: prepared }));
-  assert.equal(drum.state.currentSongId, 'test-song');
-  assert.equal(drum.state.setlistName, 'Prueba');
-  assert.equal(drum.state.setlistId, 'check-list');
-  assert.equal(drum.state.bpm, 93);
-  const bc = await gtr.c.waitFor((m) => isState(m) && m.state.setlist.length === 1);
-  assert.equal(bc.state.setlist[0].id, 'test-song', 'connected musicians receive the prepared list');
-  const re = track(await join(srv.wsUrl, room, 'prep-drum-1', 'drums', { initialSetlist: { id: 'x', name: 'Otra', songs: [song('replacement', 150)] } }));
+  assert.equal(gtr.state.currentSongId, 'test-song');
+  assert.equal(gtr.state.setlistName, 'Prueba');
+  assert.equal(gtr.state.setlistId, 'check-list');
+  assert.equal(gtr.state.bpm, 93);
+  const drum = track(await join(srv.wsUrl, room, 'prep-drum-1', 'drums', { initialSetlist: { id: 'y', name: 'Suya', songs: [song('intruder', 150)] } }));
+  assert.equal(drum.state.setlist[0].id, 'test-song', 'a later arrival may not replace the room list');
+  assert.equal(drum.state.setlist.length, 1);
+  const re = track(await join(srv.wsUrl, room, 'prep-gtr-1', 'guitar', { initialSetlist: { id: 'x', name: 'Otra', songs: [song('replacement', 150)] } }));
   assert.equal(re.state.setlist[0].id, 'test-song', 'a rejoin must preserve the existing room list');
 
   // Playing room with empty list: a joining drummer may not inject a list

@@ -6,7 +6,7 @@ import { Button, Modal, SectionLabel, Toggle } from './ui';
 interface LockScreenGuideModalProps {
   isOpen: boolean;
   onClose: () => void;
-  isDrummer: boolean;
+  isHost: boolean;
   keepScreenAwake: boolean;
   onToggleKeepScreenAwake: (val: boolean) => void;
 }
@@ -14,15 +14,15 @@ interface LockScreenGuideModalProps {
 export const LockScreenGuideModal: React.FC<LockScreenGuideModalProps> = ({
   isOpen,
   onClose,
-  isDrummer,
+  isHost,
   keepScreenAwake,
   onToggleKeepScreenAwake,
 }) => (
   <Modal open={isOpen} onClose={onClose} title="Con el celular bloqueado" subtitle="La reproducción en segundo plano depende del dispositivo">
     <section>
-      <SectionLabel>{isDrummer ? 'Como baterista' : 'Como músico'}</SectionLabel>
+      <SectionLabel>{isHost ? 'Si dirigís la sala' : 'Como músico'}</SectionLabel>
       <ul className="flex flex-col gap-2 text-sm text-neutral-300 leading-relaxed">
-        {isDrummer ? (
+        {isHost ? (
           <>
             <li>Iniciá o detené a toda la banda desde los controles de la pantalla de bloqueo o de tus auriculares.</li>
             <li>Con «siguiente» y «anterior» cambiás de tema del setlist sin desbloquear.</li>

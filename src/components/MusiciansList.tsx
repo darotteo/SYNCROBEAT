@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { UserPlus, Pencil } from 'lucide-react';
+import { UserPlus, Pencil, Crown } from 'lucide-react';
 import { MemberInfo, InstrumentType, INSTRUMENT_TYPES } from '../types/metronome';
 import { INSTRUMENT_METADATA } from './InstrumentIcon';
 import { Button, Card, IconButton, cx, inputClass } from './ui';
@@ -7,7 +7,9 @@ import { Button, Card, IconButton, cx, inputClass } from './ui';
 interface MusiciansListProps {
   members: MemberInfo[];
   myId: string;
+  isHost: boolean;
   onUpdateProfile: (name: string, instrument: InstrumentType) => void;
+  onSetHost: (memberId: string) => void;
   onOpenShareModal: () => void;
 }
 
@@ -18,11 +20,19 @@ function pingTone(ms: number) {
   return 'bg-rose-400';
 }
 
-const MusiciansListComponent: React.FC<MusiciansListProps> = ({ members, myId, onUpdateProfile, onOpenShareModal }) => {
+const MusiciansListComponent: React.FC<MusiciansListProps> = ({
+  members,
+  myId,
+  isHost,
+  onUpdateProfile,
+  onSetHost,
+  onOpenShareModal,
+}) => {
   const me = members.find((m) => m.id === myId);
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState('');
   const [editInstrument, setEditInstrument] = useState<InstrumentType>('other');
+  const [confirmHostId, setConfirmHostId] = useState<string | null>(null);
   const drumsTakenByOther = members.some((m) => m.instrument === 'drums' && m.id !== myId);
 
   const startEdit = () => {
@@ -40,8 +50,7 @@ const MusiciansListComponent: React.FC<MusiciansListProps> = ({ members, myId, o
   };
 
   const sorted = [...members].sort((a, b) => {
-    if (a.instrument === 'drums') return -1;
-    if (b.instrument === 'drums') return 1;
+    if (a.isLeader !== b.isLeader) return a.isLeader ? -1 : 1;
     return a.joinedAt - b.joinedAt;
   });
 
@@ -116,7 +125,7 @@ const MusiciansListComponent: React.FC<MusiciansListProps> = ({ members, myId, o
                 </div>
                 <div className="text-xs text-neutral-500 truncate">
                   {meta.shortLabel}
-                  {member.instrument === 'drums' && ' · controla el tempo'}
+                  {member.isLeader && <span className="text-accent"> · dirige la sala</span>}
                 </div>
               </div>
               <span className="flex items-center gap-1.5 text-xs text-neutral-500 tabular-nums" title="Latencia de red">
@@ -127,6 +136,17 @@ const MusiciansListComponent: React.FC<MusiciansListProps> = ({ members, myId, o
                 <IconButton label="Editar mi perfil" onClick={startEdit}>
                   <Pencil className="w-4 h-4" />
                 </IconButton>
+              ) : isHost && !member.isLeader ? (
+                confirmHostId === member.id ? (
+                  <Button size="sm" variant="primary" onClick={() => { onSetHost(member.id); setConfirmHostId(null); }}>
+                    Confirmar
+                  </Button>
+                ) : (
+                  // Two steps: once handed over, only the new host can hand it back
+                  <IconButton label={`Pasarle el control a ${member.name}`} onClick={() => setConfirmHostId(member.id)}>
+                    <Crown className="w-4 h-4" />
+                  </IconButton>
+                )
               ) : (
                 <span className="w-10" />
               )}
@@ -135,9 +155,10 @@ const MusiciansListComponent: React.FC<MusiciansListProps> = ({ members, myId, o
         })}
       </ul>
 
-      {!members.some((m) => m.instrument === 'drums') && (
-        <p className="text-xs text-amber-300/80">
-          No hay baterista en la sala. Alguien tiene que elegir «Batería» para controlar el tempo.
+      {isHost && members.length > 1 && (
+        <p className="text-xs text-neutral-500">
+          Dirigís la sala: controlás el tempo y el setlist. Con <Crown className="w-3 h-3 inline -mt-0.5" /> le pasás el
+          control a otro músico, toque o no la batería.
         </p>
       )}
     </Card>

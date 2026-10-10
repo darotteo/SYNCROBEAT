@@ -398,9 +398,11 @@ function handleMessage(ctx: ClientContext, msg: WSClientMessage) {
   const room = rooms.get(ctx.roomId);
   if (!room) return;
 
-  const isDrummer = ctx.instrument === 'drums';
-  const denyUnlessDrummer = (message: string) => {
-    if (isDrummer) return false;
+  // Control belongs to whoever is running the room, not to an instrument: plenty of bands are led
+  // from the guitar or the keys, and the drummer often has both hands busy.
+  const isHost = room.leaderId === ctx.id;
+  const denyUnlessHost = (message: string) => {
+    if (isHost) return false;
     send(ws, { type: 'error', message });
     return true;
   };
@@ -417,7 +419,7 @@ function handleMessage(ctx: ClientContext, msg: WSClientMessage) {
     }
 
     case 'play': {
-      if (denyUnlessDrummer('Sólo el baterista puede iniciar el metrónomo.')) return;
+      if (denyUnlessHost('Solo quien dirige la sala puede iniciar el metrónomo.')) return;
       room.isPlaying = true;
       room.startServerTime = Date.now() + PLAY_LEAD_MS;
       room.countInBeats = room.countInBars * room.timeSignature.numerator;
@@ -426,7 +428,7 @@ function handleMessage(ctx: ClientContext, msg: WSClientMessage) {
     }
 
     case 'stop': {
-      if (denyUnlessDrummer('Sólo el baterista puede detener el metrónomo.')) return;
+      if (denyUnlessHost('Solo quien dirige la sala puede detener el metrónomo.')) return;
       room.isPlaying = false;
       room.startServerTime = null;
       room.countInBeats = 0;
@@ -435,7 +437,7 @@ function handleMessage(ctx: ClientContext, msg: WSClientMessage) {
     }
 
     case 'setBpm': {
-      if (denyUnlessDrummer('Sólo el baterista puede modificar el tempo.')) return;
+      if (denyUnlessHost('Solo quien dirige la sala puede modificar el tempo.')) return;
       const bpm = clampInt(msg.bpm, MIN_BPM, MAX_BPM);
       if (bpm === null || bpm === room.bpm) return;
       rebaseToNextBar(room);
@@ -445,7 +447,7 @@ function handleMessage(ctx: ClientContext, msg: WSClientMessage) {
     }
 
     case 'setTimeSignature': {
-      if (denyUnlessDrummer('Sólo el baterista puede cambiar el compás.')) return;
+      if (denyUnlessHost('Solo quien dirige la sala puede cambiar el compás.')) return;
       const ts = sanitizeTimeSignature(msg.timeSignature);
       if (!ts) return;
       rebaseToNextBar(room);
@@ -456,7 +458,7 @@ function handleMessage(ctx: ClientContext, msg: WSClientMessage) {
     }
 
     case 'setSubdivision': {
-      if (denyUnlessDrummer('Sólo el baterista puede cambiar la subdivisión.')) return;
+      if (denyUnlessHost('Solo quien dirige la sala puede cambiar la subdivisión.')) return;
       const sub = sanitizeSubdivision(msg.subdivision);
       if (!sub) return;
       // Beat grid is unchanged, so this applies immediately without re-anchoring
@@ -466,14 +468,14 @@ function handleMessage(ctx: ClientContext, msg: WSClientMessage) {
     }
 
     case 'setAccentPattern': {
-      if (denyUnlessDrummer('Sólo el baterista puede cambiar los acentos.')) return;
+      if (denyUnlessHost('Solo quien dirige la sala puede cambiar los acentos.')) return;
       room.accentPattern = sanitizeAccentPattern(msg.accentPattern, room.timeSignature.numerator);
       broadcastPlayback(room);
       break;
     }
 
     case 'setCountInBars': {
-      if (denyUnlessDrummer('Sólo el baterista puede cambiar la cuenta previa.')) return;
+      if (denyUnlessHost('Solo quien dirige la sala puede cambiar la cuenta previa.')) return;
       const bars = clampInt(msg.countInBars, 0, 2);
       if (bars === null) return;
       room.countInBars = bars;
@@ -498,7 +500,7 @@ function handleMessage(ctx: ClientContext, msg: WSClientMessage) {
     }
 
     case 'updateSetlist': {
-      if (denyUnlessDrummer('Sólo el baterista puede actualizar el setlist de la sala.')) return;
+      if (denyUnlessHost('Solo quien dirige la sala puede actualizar el setlist de la sala.')) return;
       const setlist = sanitizeSetlist(msg.setlist);
       if (!setlist) return;
       const hasMeta = 'setlistId' in msg || 'setlistName' in msg;
@@ -508,7 +510,7 @@ function handleMessage(ctx: ClientContext, msg: WSClientMessage) {
     }
 
     case 'selectSong': {
-      if (denyUnlessDrummer('Sólo el baterista puede cambiar de tema.')) return;
+      if (denyUnlessHost('Solo quien dirige la sala puede cambiar de tema.')) return;
       const song = room.setlist.find((s) => s.id === msg.songId);
       if (!song) return;
       rebaseToNextBar(room);
@@ -543,6 +545,18 @@ function handleMessage(ctx: ClientContext, msg: WSClientMessage) {
         member.name = ctx.name;
         member.instrument = ctx.instrument;
       }
+      broadcastToRoom(room.roomId, { type: 'members_update', members: room.members });
+      break;
+    }
+
+    case 'setHost': {
+      if (denyUnlessHost('Solo quien dirige la sala puede pasarle el control a otro músico.')) return;
+      const target = room.members.find((m) => m.id === msg.memberId);
+      if (!target || target.id === room.leaderId) return;
+      room.leaderId = target.id;
+      room.members.forEach((m) => {
+        m.isLeader = m.id === room.leaderId;
+      });
       broadcastToRoom(room.roomId, { type: 'members_update', members: room.members });
       break;
     }
@@ -589,10 +603,14 @@ function handleJoin(ctx: ClientContext, msg: Extract<WSClientMessage, { type: 'j
   ctx.name = name;
   ctx.instrument = instrument;
 
-  // A drummer may bring a prepared list into an empty, stopped room.
+  if (!room.leaderId || !room.members.some((m) => m.id === room.leaderId)) {
+    room.leaderId = ctx.id;
+  }
+
+  // Whoever is opening the room may bring a prepared list into it, whatever they play.
   // Existing room lists and active playback always take precedence.
   let setlistLoaded = false;
-  if (instrument === 'drums' && room.setlist.length === 0 && !room.isPlaying && msg.initialSetlist) {
+  if (room.leaderId === ctx.id && room.setlist.length === 0 && !room.isPlaying && msg.initialSetlist) {
     // Older app versions send a plain array of songs instead of a named setlist
     const initial = msg.initialSetlist as unknown;
     const named = Array.isArray(initial) ? { id: null, name: null, songs: initial } : (initial as Record<string, unknown>);
@@ -602,10 +620,6 @@ function handleJoin(ctx: ClientContext, msg: Extract<WSClientMessage, { type: 'j
       applySetlist(room, prepared, sanitizeSetlistMeta(named.id, named.name));
       setlistLoaded = true;
     }
-  }
-
-  if (!room.leaderId || !room.members.some((m) => m.id === room.leaderId)) {
-    room.leaderId = ctx.id;
   }
 
   const existing = room.members.find((m) => m.id === ctx.id);

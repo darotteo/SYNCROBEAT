@@ -76,6 +76,7 @@ export default function App() {
     selectSong,
     updateSetlist,
     updateProfile,
+    setHost,
     activeCue,
   } = useSyncBeat();
 
@@ -151,8 +152,9 @@ export default function App() {
   }, [Boolean(room), keepScreenAwake]);
 
   const myMember = room?.members.find((m) => m.id === myId);
-  const isDrummer = isOfflineMode || myMember?.instrument === 'drums';
-  const drummer = room?.members.find((m) => m.instrument === 'drums');
+  // Running the room is a role, not an instrument: the host can hand it to anybody in the room
+  const isHost = isOfflineMode || Boolean(myMember?.isLeader);
+  const hostMember = room?.members.find((m) => m.isLeader);
 
   const currentSongIndex = room ? room.setlist.findIndex((s) => s.id === room.currentSongId) : -1;
   const currentSong = currentSongIndex >= 0 ? room!.setlist[currentSongIndex] : undefined;
@@ -201,7 +203,7 @@ export default function App() {
         setIsStageOpen((v) => !v);
         return;
       }
-      if (!isDrummer) return;
+      if (!isHost) return;
 
       switch (e.code) {
         case 'Space':
@@ -234,7 +236,7 @@ export default function App() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [room, isDrummer, togglePlay, adjustBpm, tapTempo, handleNextSong, handlePrevSong]);
+  }, [room, isHost, togglePlay, adjustBpm, tapTempo, handleNextSong, handlePrevSong]);
 
   // Lock-screen / headphone controls
   useEffect(() => {
@@ -242,19 +244,19 @@ export default function App() {
     const songTitle = currentSong ? currentSong.title : 'Metrónomo';
     audioEngine.updateMediaSession({
       title: songTitle,
-      artist: isOfflineMode ? 'Práctica local' : `Sala ${room.roomId}${drummer ? ` · ${drummer.name}` : ''}`,
+      artist: isOfflineMode ? 'Práctica local' : `Sala ${room.roomId}${hostMember ? ` · ${hostMember.name}` : ''}`,
       album: `${room.bpm} BPM · ${room.timeSignature.numerator}/${room.timeSignature.denominator}`,
       isPlaying: room.isPlaying,
     });
 
     try {
-      const playPause = () => (isDrummer ? togglePlay() : setMuted(!audioEngine.getMuted()));
+      const playPause = () => (isHost ? togglePlay() : setMuted(!audioEngine.getMuted()));
       navigator.mediaSession.setActionHandler('play', playPause);
       navigator.mediaSession.setActionHandler('pause', playPause);
-      navigator.mediaSession.setActionHandler('nexttrack', isDrummer ? handleNextSong : null);
-      navigator.mediaSession.setActionHandler('previoustrack', isDrummer ? handlePrevSong : null);
+      navigator.mediaSession.setActionHandler('nexttrack', isHost ? handleNextSong : null);
+      navigator.mediaSession.setActionHandler('previoustrack', isHost ? handlePrevSong : null);
     } catch {}
-  }, [room, currentSong, drummer, isDrummer, isOfflineMode, togglePlay, setMuted, handleNextSong, handlePrevSong]);
+  }, [room, currentSong, hostMember, isHost, isOfflineMode, togglePlay, setMuted, handleNextSong, handlePrevSong]);
 
   const handleLeave = () => {
     setIsMenuOpen(false);
@@ -421,7 +423,7 @@ export default function App() {
                 isPlaying={room.isPlaying}
                 timeSignature={room.timeSignature}
                 accentPattern={room.accentPattern}
-                canEdit={isDrummer}
+                canEdit={isHost}
                 onToggleAccent={toggleAccentAt}
                 fullScreenFlash={fullScreenFlash}
                 onToggleFullScreenFlash={handleToggleFlash}
@@ -430,8 +432,8 @@ export default function App() {
               <TempoControls
                 bpm={room.bpm}
                 isPlaying={room.isPlaying}
-                canControl={isDrummer}
-                controllerName={drummer?.name ?? null}
+                canControl={isHost}
+                controllerName={hostMember?.name ?? null}
                 onTogglePlay={togglePlay}
                 onSetBpm={setBpm}
                 onAdjustBpm={adjustBpm}
@@ -446,7 +448,7 @@ export default function App() {
                 onSaveBpmToSong={handleSaveBpmToSong}
               />
 
-              {isDrummer && (
+              {isHost && (
                 <SignatureControls
                   timeSignature={room.timeSignature}
                   subdivision={room.subdivision}
@@ -476,7 +478,7 @@ export default function App() {
                   room={room}
                   onSelectSong={selectSong}
                   onUpdateSetlist={updateSetlist}
-                  isDrummer={isDrummer}
+                  isHost={isHost}
                   isOffline={isOfflineMode}
                 />
               )}
@@ -485,7 +487,9 @@ export default function App() {
                 <MusiciansList
                   members={room.members}
                   myId={myId}
+                  isHost={isHost}
                   onUpdateProfile={updateProfile}
+                  onSetHost={setHost}
                   onOpenShareModal={() => setIsShareModalOpen(true)}
                 />
               )}
@@ -518,8 +522,8 @@ export default function App() {
           }
           currentIndex={currentSongIndex}
           setlistCount={room.setlist.length}
-          canControl={isDrummer}
-          controllerName={drummer?.name ?? null}
+          canControl={isHost}
+          controllerName={hostMember?.name ?? null}
           onTogglePlay={togglePlay}
           onNextSong={handleNextSong}
           onPrevSong={handlePrevSong}
@@ -558,7 +562,7 @@ export default function App() {
       <LockScreenGuideModal
         isOpen={isLockScreenModalOpen}
         onClose={() => setIsLockScreenModalOpen(false)}
-        isDrummer={isDrummer}
+        isHost={isHost}
         keepScreenAwake={keepScreenAwake}
         onToggleKeepScreenAwake={handleToggleKeepScreenAwake}
       />

@@ -28,7 +28,7 @@ interface SetlistManagerProps {
   room: RoomState;
   onSelectSong: (songId: string) => void;
   onUpdateSetlist: (setlist: SongItem[], meta?: { id: string | null; name: string | null }) => void;
-  isDrummer: boolean;
+  isHost: boolean;
   isOffline: boolean;
   /** Editing a saved setlist before entering a room: no room actions, no library sync. */
   preparation?: boolean;
@@ -162,7 +162,7 @@ const SetlistManagerComponent: React.FC<SetlistManagerProps> = ({
   room,
   onSelectSong,
   onUpdateSetlist,
-  isDrummer,
+  isHost,
   isOffline,
   preparation = false,
 }) => {
@@ -178,8 +178,8 @@ const SetlistManagerComponent: React.FC<SetlistManagerProps> = ({
   const [notice, setNotice] = useState<string | null>(null);
 
   const list = room.setlist;
-  const canEdit = preparation || isOffline || isDrummer;
-  const canSelect = !preparation && (isOffline || isDrummer);
+  const canEdit = preparation || isOffline || isHost;
+  const canSelect = !preparation && (isOffline || isHost);
   const [libraryVersion, setLibraryVersion] = useState(0);
   // The room list is a saved setlist of this device: edits are kept in sync with it.
   // Reading storage is memoized so playback updates never touch localStorage.
@@ -518,8 +518,8 @@ const SetlistManagerComponent: React.FC<SetlistManagerProps> = ({
         </form>
       )}
 
-      {!isOffline && !preparation && !isDrummer && (
-        <p className="text-xs text-neutral-500">Solo el baterista elige y cambia los temas de la sala.</p>
+      {!isOffline && !preparation && !isHost && (
+        <p className="text-xs text-neutral-500">Solo quien dirige la sala elige y cambia los temas.</p>
       )}
 
       {notice && (
@@ -549,7 +549,7 @@ const SetlistManagerComponent: React.FC<SetlistManagerProps> = ({
               ? preparation
                 ? 'Agregá los temas de a uno o pegá la lista entera desde WhatsApp o tus notas.'
                 : 'Cargá uno de tus setlists con «Cambiar», agregá temas o pegá la lista entera.'
-              : 'El baterista todavía no cargó el setlist de la sala.'}
+              : 'Todavía no hay setlist cargado en la sala.'}
           </p>
         </div>
       ) : (

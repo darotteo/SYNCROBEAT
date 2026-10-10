@@ -60,6 +60,8 @@ export const JoinRoomModal: React.FC<JoinRoomModalProps> = ({
   const [instrument, setInstrument] = useState<InstrumentType>(() => loadProfile().instrument);
   const [isDrumsTaken, setIsDrumsTaken] = useState(false);
   const [roomHasSetlist, setRoomHasSetlist] = useState(false);
+  // Nobody inside yet, so this join opens the room and gets to run it
+  const [willOpenRoom, setWillOpenRoom] = useState(true);
   const [selectedSetlist, setSelectedSetlist] = useState<NamedSetlist | undefined>();
 
   // Check whether the room already has a drummer
@@ -69,6 +71,7 @@ export const JoinRoomModal: React.FC<JoinRoomModalProps> = ({
     if (!code) {
       setIsDrumsTaken(false);
       setRoomHasSetlist(false);
+      setWillOpenRoom(true);
       return;
     }
     let cancelled = false;
@@ -79,11 +82,13 @@ export const JoinRoomModal: React.FC<JoinRoomModalProps> = ({
         if (!cancelled) {
           setIsDrumsTaken(Boolean(data?.drumsTaken));
           setRoomHasSetlist(Boolean(data?.setlistCount));
+          setWillOpenRoom(!data?.membersCount);
         }
       } catch {
         if (!cancelled) {
           setIsDrumsTaken(false);
           setRoomHasSetlist(false);
+          setWillOpenRoom(true);
         }
       }
     };
@@ -195,16 +200,14 @@ export const JoinRoomModal: React.FC<JoinRoomModalProps> = ({
 
           <p className="text-xs text-neutral-400 text-center -mt-1">
             {isDrumsTaken
-              ? 'Esta sala ya tiene baterista, que es quien controla el tempo.'
-              : instrument === 'drums'
-              ? 'Como baterista vas a controlar el tempo de la banda.'
-              : 'El baterista de la sala controla el tempo.'}
+              ? 'Esta sala ya tiene baterista. Elegí otro instrumento.'
+              : 'Quien abre la sala la dirige, toque lo que toque, y después puede pasarle el control a cualquiera.'}
           </p>
 
           {error && <p className="text-sm text-rose-300 text-center">{error}</p>}
         </form>
 
-        <SetlistPicker onChange={setSelectedSetlist} canUseInRoom={instrument === 'drums'} roomHasSetlist={roomHasSetlist} />
+        <SetlistPicker onChange={setSelectedSetlist} canUseInRoom={willOpenRoom} roomHasSetlist={roomHasSetlist} />
 
           <button
             type="submit"

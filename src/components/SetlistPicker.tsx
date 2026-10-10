@@ -111,10 +111,10 @@ export function SetlistPicker({ onChange, canUseInRoom, roomHasSetlist }: Props)
         )}
         <p className="text-xs text-neutral-400 leading-relaxed">
           {roomHasSetlist
-            ? 'La sala ya tiene un setlist y se conserva al entrar. Adentro, el baterista puede cambiarlo con «Cambiar».'
+            ? 'La sala ya tiene un setlist y se conserva al entrar. Adentro, quien la dirige puede cambiarlo con «Cambiar».'
             : canUseInRoom
-            ? 'El setlist elegido se carga al entrar como baterista. También se usa para practicar.'
-            : 'Podés preparar tus listas para practicar. El baterista elige el setlist de la sala.'}
+            ? 'Si abrís la sala, el setlist elegido se carga al entrar. También se usa para practicar.'
+            : 'Podés preparar tus listas para practicar. El setlist de la sala lo elige quien la dirige.'}
         </p>
       </section>
       <Modal
@@ -148,7 +148,7 @@ export function SetlistPicker({ onChange, canUseInRoom, roomHasSetlist }: Props)
               room={previewRoom}
               onSelectSong={() => {}}
               onUpdateSetlist={(songs) => setDraft((prev) => prev && { ...prev, songs })}
-              isDrummer
+              isHost
               isOffline
               preparation
             />
