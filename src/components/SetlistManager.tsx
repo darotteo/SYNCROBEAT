@@ -179,7 +179,12 @@ const SetlistManagerComponent: React.FC<SetlistManagerProps> = ({
 
   const list = room.setlist;
   const canEdit = preparation || isOffline || isHost;
-  const canSelect = !preparation && (isOffline || isHost);
+  // Reordering is off until asked for: mid-rehearsal the list is being tapped to pick songs, and a
+  // stray swipe must not rewrite the running order. Inside the setlist editor it is always on,
+  // since editing is the whole point of that screen.
+  const [reordering, setReordering] = useState(false);
+  const canReorder = canEdit && (preparation || reordering);
+  const canSelect = !preparation && !reordering && (isOffline || isHost);
   const [libraryVersion, setLibraryVersion] = useState(0);
   // The room list is a saved setlist of this device: edits are kept in sync with it.
   // Reading storage is memoized so playback updates never touch localStorage.
@@ -469,6 +474,20 @@ const SetlistManagerComponent: React.FC<SetlistManagerProps> = ({
             Importar
           </Button>
         )}
+        {canEdit && !preparation && list.length > 1 && (
+          <Button
+            size="sm"
+            variant={reordering ? 'primary' : 'secondary'}
+            onClick={() => {
+              setReordering((v) => !v);
+              setIsAdding(false);
+              setEditingId(null);
+            }}
+          >
+            <GripVertical className="w-4 h-4" />
+            {reordering ? 'Listo' : 'Reordenar'}
+          </Button>
+        )}
         <div className="flex-1" />
         {list.length > 0 && !preparation && !linkedToLibrary && (
           <IconButton label="Guardar en mis setlists" onClick={() => setSaveName(room.setlistName || '')}>
@@ -609,13 +628,13 @@ const SetlistManagerComponent: React.FC<SetlistManagerProps> = ({
                   }}
                   className={cx(
                     'group flex items-center gap-3 pr-1 py-2.5 rounded-2xl transition-colors',
-                    canEdit ? 'pl-0.5' : 'pl-3',
+                    canReorder ? 'pl-0.5' : 'pl-3',
                     isCurrent ? 'bg-surface-2' : canSelect ? 'hover:bg-surface-2/60' : '',
                     canSelect && !drag && 'cursor-pointer',
                     isDragging && 'bg-surface-3 shadow-lg ring-1 ring-accent/40'
                   )}
                 >
-                  {canEdit && (
+                  {canReorder && (
                     <button
                       type="button"
                       aria-label={`Mover ${song.title}. Arrastrá, o usá las flechas arriba y abajo.`}
