@@ -95,8 +95,10 @@ export function Segmented<T extends string | number>({ value, options, onChange,
             aria-pressed={selected}
             onClick={() => onChange(opt.value)}
             className={cx(
+              // Tight padding and smaller type on phones: four tabs have to fit without the label
+              // being cut off. `truncate` stays as a last resort for labels nobody anticipated.
               'flex-1 min-w-0 rounded-xl font-medium transition-colors truncate',
-              size === 'sm' ? 'h-8 px-2 text-xs' : 'h-10 px-3 text-sm',
+              size === 'sm' ? 'h-8 px-1 text-xs sm:px-2' : 'h-10 px-1 text-xs sm:px-3 sm:text-sm',
               selected ? 'bg-brand text-black shadow-sm' : 'text-neutral-400 hover:text-white'
             )}
           >
