@@ -104,8 +104,12 @@ class AudioEngine {
   private voiceRequested = new Set<string>();
 
   // Synchronization
-  private segment: Segment | null = null;
-  private prevSegment: Segment | null = null; // Keeps clicking until `segment.start` after a tempo change
+  /**
+   * Tempo timeline in ascending `start` order: [0] is what is sounding now, the rest are hand-overs
+   * still ahead. More than one can be pending, because the server anchors each new bar line on the
+   * tempo it expects to be running by then — dropping the middle one would shift every later bar.
+   */
+  private timeline: Segment[] = [];
   private serverTimeOffset: number = 0; // serverTime - monotonicNowMs()
   private hasServerTimeOffset: boolean = false;
   private clockSource: 'output' | 'reported' = 'reported';
@@ -337,7 +341,7 @@ class AudioEngine {
   private initMasterChain(ctx: AudioContext) {
     try {
       this.inputNode = ctx.createGain();
-      this.inputNode.gain.setValueAtTime(1.0, ctx.currentTime);
+      this.inputNode.gain.setValueAtTime(this.userGain(), ctx.currentTime);
 
       if (isIOSDevice()) {
         // Safe, clean chain for iOS to prevent WebKit AudioNode bugs/silence
@@ -402,6 +406,7 @@ class AudioEngine {
       try {
         if (!this.inputNode) {
           this.inputNode = ctx.createGain();
+          this.inputNode.gain.setValueAtTime(this.userGain(), ctx.currentTime);
         }
         this.inputNode.connect(ctx.destination);
       } catch {}
@@ -438,8 +443,27 @@ class AudioEngine {
     return this.inputNode!;
   }
 
+  /**
+   * Volume and mute ride on the shared input node instead of on each click, so a change also
+   * reaches the clicks already queued (the scheduler works up to `SCHEDULE_AHEAD_SEC` ahead).
+   */
+  private userGain(): number {
+    return this.isMuted ? 0 : this.volume;
+  }
+
+  private applyUserGain() {
+    if (!this.inputNode || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    try {
+      this.inputNode.gain.cancelScheduledValues(now);
+      // A few ms of ramp: perceptually immediate, without the click a hard step would make
+      this.inputNode.gain.setTargetAtTime(this.userGain(), now, 0.008);
+    } catch {}
+  }
+
   public setMuted(muted: boolean) {
     this.isMuted = muted;
+    this.applyUserGain();
   }
 
   public getMuted(): boolean {
@@ -448,6 +472,7 @@ class AudioEngine {
 
   public setVolume(vol: number) {
     this.volume = Math.max(0, Math.min(1, vol));
+    this.applyUserGain();
     try {
       localStorage.setItem('syncbeat_audio_volume', String(this.volume));
     } catch {}
@@ -548,7 +573,7 @@ class AudioEngine {
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     const gain = ctx.createGain();
-    gain.gain.setValueAtTime(this.volume * 1.6, time);
+    gain.gain.setValueAtTime(1.6, time); // Volume lives on the shared input node
     source.connect(gain);
     gain.connect(this.getMasterInputNode());
     source.start(time);
@@ -811,20 +836,30 @@ class AudioEngine {
       countInBeats: state.countInBeats || 0,
     };
 
-    if (this.isRunning && this.segment) {
-      if (JSON.stringify(next) === JSON.stringify(this.segment)) return;
-      if (next.start !== this.segment.start) {
-        const changeIsAhead = next.start > this.serverNow() && this.segment.start < next.start;
-        this.prevSegment = changeIsAhead ? this.segment : null;
-      }
-      this.segment = next;
+    if (this.isRunning && this.timeline.length) {
+      const newest = this.timeline[this.timeline.length - 1];
+      if (JSON.stringify(next) === JSON.stringify(newest)) return;
+      // A hand-over replaces any planned at or after its own instant, and leaves the earlier ones
+      // alone: whatever is clicking right now has to keep clicking until its own hand-over arrives.
+      this.timeline = this.timeline.filter((s) => s.start < next.start);
+      this.timeline.push(next);
+      this.dropElapsedSegments();
       this.reschedule();
       return;
     }
 
-    this.segment = next;
-    this.prevSegment = null;
+    this.timeline = [next];
     this.start();
+  }
+
+  /** Keeps the segment sounding now plus every hand-over still ahead; forgets the ones already over. */
+  private dropElapsedSegments() {
+    const serverNow = this.serverNow();
+    let sounding = 0;
+    for (let i = 0; i < this.timeline.length; i++) {
+      if (this.timeline[i].start <= serverNow) sounding = i;
+    }
+    if (sounding > 0) this.timeline.splice(0, sounding);
   }
 
   private start() {
@@ -850,8 +885,7 @@ class AudioEngine {
 
   public stop() {
     this.isRunning = false;
-    this.segment = null;
-    this.prevSegment = null;
+    this.timeline = [];
     this.cancelFutureVoices(true);
     this.scheduledAudioBeats.clear();
 
@@ -944,7 +978,8 @@ class AudioEngine {
   }
 
   private scheduler() {
-    if (!this.isRunning || !this.segment) return;
+    if (!this.isRunning || !this.timeline.length) return;
+    this.dropElapsedSegments();
 
     const ctx = this.getAudioContext();
     // Visual beats keep following the shared clock even while the audio is blocked or recovering
@@ -957,13 +992,11 @@ class AudioEngine {
     const audioWindowEndMs = serverNow + this.SCHEDULE_AHEAD_SEC * 1000;
     const visualWindowEndMs = serverNow + this.SHORT_WINDOW_MS;
 
-    const plans: { seg: Segment; end: number }[] = [];
-    if (this.prevSegment && this.prevSegment.start < this.segment.start && serverNow < this.segment.start) {
-      plans.push({ seg: this.prevSegment, end: this.segment.start });
-    } else {
-      this.prevSegment = null;
-    }
-    plans.push({ seg: this.segment, end: Infinity });
+    // Each segment clicks until the next hand-over; the last one runs on until the room changes it
+    const plans: { seg: Segment; end: number }[] = this.timeline.map((seg, i) => ({
+      seg,
+      end: this.timeline[i + 1]?.start ?? Infinity,
+    }));
 
     for (const { seg, end } of plans) {
       const subPerBeat = parseInt(seg.subdivision, 10) || 1;
@@ -1003,7 +1036,8 @@ class AudioEngine {
           !this.scheduledAudioBeats.has(key)
         ) {
           this.scheduledAudioBeats.add(key);
-          if (!this.isMuted && accentLevel > 0) {
+          // Queued even while muted: mute is a gain, so unmuting is heard on the very next click
+          if (accentLevel > 0) {
             const playTime = this.serverToAudioTime(audioServerMs);
             // Never bunch missed beats into immediate clicks after a stall.
             if (playTime >= audioNow + 0.003) {
@@ -1098,7 +1132,7 @@ class AudioEngine {
     const masterInput = this.getMasterInputNode();
 
     const voiceGain = ctx.createGain();
-    voiceGain.gain.setValueAtTime(this.volume, time);
+    voiceGain.gain.setValueAtTime(1, time); // Volume lives on the shared input node
     voiceGain.connect(masterInput);
 
     if (key) {

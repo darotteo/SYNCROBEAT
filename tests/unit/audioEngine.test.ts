@@ -328,10 +328,15 @@ test('triplets and sixteenths are evenly spaced', () => {
 
 test('muting stops the sound but the screen keeps the beat', () => {
   const { engine, ctx, clicks, playback } = fixture();
+  const master = fakeGainNode();
+  engine.inputNode = master;
   engine.setMuted(true);
   engine.setPlayback(playback);
   run(engine, ctx, 2000);
-  assert.equal(clicks.length, 0);
+  // Silence comes from the shared gain, not from skipping the schedule: planning the beats anyway
+  // is what lets unmuting be heard on the next one instead of after the look-ahead window drains.
+  assert.equal(master.gain.value, 0, 'muted output must be silent');
+  assert.ok(clicks.length > 0, 'beats stay planned while muted so unmuting is immediate');
   assert.ok(timers.size > 0, 'visual beats still scheduled');
   engine.stop();
 });
@@ -353,6 +358,77 @@ test('personal fine offset plays the click earlier and is applied live', () => {
   assert.equal(engine.getBluetoothOffset(), 350);
   engine.setBluetoothOffset(-5000);
   assert.equal(engine.getBluetoothOffset(), -150);
+  engine.stop();
+});
+
+/** Stands in for the shared input node so a test can read the gain the engine applied. */
+function fakeGainNode() {
+  const node = {
+    gain: {
+      value: 1,
+      cancelScheduledValues() {},
+      setValueAtTime(v: number) { node.gain.value = v; },
+      setTargetAtTime(v: number) { node.gain.value = v; },
+    },
+  };
+  return node;
+}
+
+test('two tempo changes in a row keep clicking the tempo that is still sounding', () => {
+  // Audit case: a second change arriving while the first was still pending used to overwrite the
+  // segment that was actually clicking, leaving a hole until the first change's bar line.
+  const { engine, ctx, clicks, playback } = fixture();
+  const sixteenths = { ...playback, subdivision: '4' as const }; // 125 ms apart at 120 BPM
+  engine.setPlayback(sixteenths);
+  run(engine, ctx, 900);
+  engine.setPlayback({ ...sixteenths, bpm: 100, startServerTime: epoch + 2200 });
+  run(engine, ctx, 1900);
+  engine.setPlayback({ ...sixteenths, bpm: 110, startServerTime: epoch + 4600 });
+  run(engine, ctx, 2400);
+
+  const keys = new Set(active(clicks).map((c) => c.key));
+  // 1700, 1825, 1950 and 2075 ms all belong to the 120 BPM segment that hands over at 2200
+  for (const i of [12, 13, 14, 15]) {
+    assert.ok(keys.has(`${epoch + 200}_120_4_${i}`), `sixteenth ${i} of the sounding tempo went missing`);
+  }
+  // The superseded change still happens: the server anchored 4600 on 100 BPM running from 2200
+  assert.ok(keys.has(`${epoch + 2200}_100_4_0`), 'the pending hand-over was dropped instead of kept');
+
+  const times = active(clicks).map((c) => c.time).sort((a, b) => a - b);
+  for (let i = 1; i < times.length; i++) {
+    const gapMs = Math.round((times[i] - times[i - 1]) * 1000);
+    assert.ok(gapMs <= 160, `a ${gapMs} ms hole opened between two clicks`);
+  }
+  engine.stop();
+});
+
+test('mute and volume reach the clicks already queued, and unmuting is heard at once', () => {
+  const { engine, ctx, clicks, playback } = fixture();
+  const master = fakeGainNode();
+  engine.inputNode = master;
+  engine.setVolume(0.8);
+  engine.setPlayback(playback);
+  run(engine, ctx, 300);
+  assert.equal(master.gain.value, 0.8);
+  assert.ok(active(clicks).length >= 3, 'the scheduler works ahead, so there are queued clicks to silence');
+
+  engine.setMuted(true);
+  assert.equal(master.gain.value, 0, 'mute must silence what is already queued, not only new clicks');
+
+  // Beats keep being planned while muted; otherwise unmuting would land in a hole
+  const beforeMuted = clicks.length;
+  run(engine, ctx, 1300);
+  assert.ok(clicks.length > beforeMuted, 'muting stopped the scheduler, so unmuting cannot recover');
+
+  engine.setMuted(false);
+  assert.equal(master.gain.value, 0.8, 'unmute must restore the chosen volume');
+  assert.ok(
+    active(clicks).some((c) => c.time > ctx.currentTime),
+    'nothing is queued, so the first beat after unmuting would arrive late',
+  );
+
+  engine.setVolume(0.3);
+  assert.equal(master.gain.value, 0.3, 'a volume change must reach the queued clicks too');
   engine.stop();
 });
 
