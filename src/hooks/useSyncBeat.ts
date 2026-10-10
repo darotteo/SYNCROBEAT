@@ -16,7 +16,8 @@ import {
 } from '../types/metronome';
 import { audioEngine } from '../utils/audioEngine';
 import { monotonicNowMs, nextBarStart } from '../utils/timing';
-import { getClientId } from '../utils/clientId';
+import { getClientId, getDeviceToken, saveDeviceToken } from '../utils/clientId';
+import { connectionUrls } from '../utils/mobile';
 
 export interface UseSyncBeatReturn {
   isConnected: boolean;
@@ -227,8 +228,13 @@ export function useSyncBeat(): UseSyncBeatReturn {
     isDeliberateDisconnectRef.current = false;
     setIsConnecting(true);
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${protocol}//${window.location.host}/api/ws`);
+    let ws: WebSocket;
+    try { ws = new WebSocket(connectionUrls().websocket); }
+    catch (error) {
+      setJoinError(error instanceof Error ? error.message : 'No se pudo conectar con la sala.');
+      setIsConnecting(false);
+      return;
+    }
     socketRef.current = ws;
 
     ws.onopen = () => {
@@ -236,7 +242,7 @@ export function useSyncBeat(): UseSyncBeatReturn {
       setIsConnected(true);
       setIsConnecting(false);
 
-      send({ type: 'join', roomId, name, instrument, clientId: getClientId(), ...(initialSetlist ? { initialSetlist } : {}) });
+      send({ type: 'join', roomId, name, instrument, clientId: getClientId(), deviceToken: getDeviceToken(connectionUrls().api), ...(initialSetlist ? { initialSetlist } : {}) });
 
       // Initial burst for a quick clock estimate, then periodic drift correction
       pingSamplesRef.current = [];
@@ -280,6 +286,10 @@ export function useSyncBeat(): UseSyncBeatReturn {
       }
 
       switch (msg.type) {
+        case 'device_session': {
+          saveDeviceToken(connectionUrls().api, msg.deviceToken);
+          break;
+        }
         case 'pong': {
           const receivedAt = monotonicNowMs();
           const rtt = receivedAt - msg.clientTime;

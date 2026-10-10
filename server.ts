@@ -1,6 +1,7 @@
 import express from 'express';
 import http from 'http';
 import path from 'path';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import {
   RoomState,
@@ -39,8 +40,23 @@ const EMPTY_ROOM_TTL_MS = 30 * 60_000;
 const RATE_BUCKET_SIZE = 40;
 const RATE_REFILL_PER_SEC = 20;
 const MAX_MESSAGE_BYTES = 256 * 1024;
+const FREE_ROOM_MEMBERS = 2;
+// Temporary server-side grants for testing only. Store entitlements must replace this before release.
+const betaProRooms = new Set(process.env.SYNCROBEAT_RELEASE_CHANNEL === 'beta'
+  ? (process.env.BETA_PRO_ROOM_CODES || '').split(',').map((id) => sanitizeRoomId(id)).filter(Boolean) : []);
+const nativeOrigins = new Set((process.env.NATIVE_APP_ORIGINS || 'https://localhost,capacitor://localhost').split(',').map((s) => s.trim()));
 
 const app = express();
+app.use('/api', (req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && nativeOrigins.has(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.vary('Origin');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    if (req.method === 'OPTIONS') { res.sendStatus(204); return; }
+  }
+  next();
+});
 const server = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE_BYTES });
 
@@ -160,8 +176,20 @@ function sanitizeSetlist(value: unknown): SongItem[] | null {
 
 const rooms = new Map<string, RoomState>();
 const roomEmptySince = new Map<string, number>();
+const deviceSessions = new Map<string, { token: string; lastSeen: number }>();
+
+function validDeviceToken(actual: unknown, expected: string): boolean {
+  if (typeof actual !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(actual) || actual.length !== expected.length) return false;
+  return timingSafeEqual(Buffer.from(actual), Buffer.from(expected));
+}
+
+function roomAccess(roomId: string) {
+  const pro = betaProRooms.has(roomId);
+  return { plan: pro ? 'pro' as const : 'free' as const, memberLimit: pro ? null : FREE_ROOM_MEMBERS };
+}
 
 interface ClientContext {
+  authenticated: boolean;
   id: string; // Stable per device (sent by the client), so a reconnect reclaims the same seat
   ws: WebSocket;
   roomId: string | null;
@@ -187,6 +215,7 @@ function getOrCreateRoom(roomId: string): RoomState {
   let room = rooms.get(roomId);
   if (!room) {
     room = {
+      ...roomAccess(roomId),
       roomId,
       roomName: `Sala ${roomId}`,
       bpm: 120,
@@ -327,6 +356,7 @@ wss.on('connection', (ws) => {
   } catch {}
 
   const ctx: ClientContext = {
+    authenticated: false,
     id: 'musician-' + Math.random().toString(36).substring(2, 12),
     ws,
     roomId: null,
@@ -561,6 +591,27 @@ function handleJoin(ctx: ClientContext, msg: Extract<WSClientMessage, { type: 'j
   const instrument = sanitizeInstrument(msg.instrument) ?? 'other';
   const name = cleanText(msg.name, 25) || 'Músico';
 
+  if (!clientId || (ctx.authenticated && ctx.id !== clientId)) {
+    send(ws, { type: 'error', code: 'identity_conflict', message: 'La identidad de esta conexión no es válida. Volvé a entrar.' });
+    return;
+  }
+  const session = deviceSessions.get(clientId);
+  if (session && !validDeviceToken(msg.deviceToken, session.token)) {
+    send(ws, { type: 'error', code: 'identity_conflict', message: 'No se pudo recuperar este dispositivo. La conexión original sigue activa.' });
+    return;
+  }
+  const targetRoom = rooms.get(roomId);
+  const alreadyMember = targetRoom?.members.some((m) => m.id === clientId);
+  const access = roomAccess(roomId);
+  if (!alreadyMember && access.memberLimit !== null && (targetRoom?.members.length ?? 0) >= access.memberLimit) {
+    send(ws, { type: 'error', code: 'room_full', message: 'Esta sala llegó al límite gratuito de 2 integrantes. Desde el tercero necesitás SyncroBeat Pro.' });
+    return;
+  }
+  if (instrument === 'drums' && targetRoom?.members.some((m) => m.instrument === 'drums' && m.id !== clientId)) {
+    send(ws, { type: 'error', code: 'drums_taken', message: 'Ya hay un baterista en esta sala.' });
+    return;
+  }
+
   // Leaving a previous room on the same socket
   if (ctx.roomId && ctx.roomId !== roomId) removeFromRoom(ctx);
 
@@ -576,6 +627,10 @@ function handleJoin(ctx: ClientContext, msg: Extract<WSClientMessage, { type: 'j
     }
     ctx.id = clientId;
   }
+
+  ctx.authenticated = true;
+  const deviceToken = session?.token ?? randomBytes(32).toString('base64url');
+  deviceSessions.set(clientId, { token: deviceToken, lastSeen: Date.now() });
 
   const room = getOrCreateRoom(roomId);
 
@@ -626,6 +681,7 @@ function handleJoin(ctx: ClientContext, msg: Extract<WSClientMessage, { type: 'j
     room.members.push(memberInfo);
   }
 
+  send(ws, { type: 'device_session', deviceToken });
   send(ws, { type: 'room_state', state: room, yourId: ctx.id });
   // Everyone else only needs the full state when the setlist changed; otherwise the member list
   if (setlistLoaded) broadcastRoomState(room, ws);
@@ -649,6 +705,10 @@ const heartbeat = setInterval(() => {
 // Forget rooms that have been empty for a while
 const roomSweeper = setInterval(() => {
   const now = Date.now();
+  const activeIds = new Set([...clients.values()].map((ctx) => ctx.id));
+  for (const [id, session] of deviceSessions) {
+    if (!activeIds.has(id) && now - session.lastSeen > EMPTY_ROOM_TTL_MS) deviceSessions.delete(id);
+  }
   for (const [roomId, since] of roomEmptySince.entries()) {
     const room = rooms.get(roomId);
     if (!room || (room.members.length === 0 && now - since > EMPTY_ROOM_TTL_MS)) {
@@ -686,10 +746,11 @@ app.get('/api/rooms/:id', (req, res) => {
   const room = rooms.get(sanitizeRoomId(req.params.id));
   if (!room) {
     // A room that does not exist yet is created on the first join
-    return res.json({ exists: false, membersCount: 0, drumsTaken: false });
+    return res.json({ exists: false, membersCount: 0, drumsTaken: false, ...roomAccess(sanitizeRoomId(req.params.id)) });
   }
   res.json({
     exists: true,
+    ...roomAccess(room.roomId),
     roomId: room.roomId,
     roomName: room.roomName,
     bpm: room.bpm,

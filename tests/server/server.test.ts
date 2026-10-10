@@ -38,7 +38,7 @@ test('HTTP: health, SPA fallback, room metadata', async () => {
   assert.match(page.headers.get('cache-control') || '', /no-cache/);
 
   const missing = await fetch(`${srv.url}/api/rooms/NOPE-${Date.now()}`).then((r) => r.json());
-  assert.deepEqual(missing, { exists: false, membersCount: 0, drumsTaken: false });
+  assert.deepEqual(missing, { exists: false, membersCount: 0, drumsTaken: false, plan: 'free', memberLimit: 2 });
 });
 
 test('ping/pong echoes clientTime and returns server time', async () => {
@@ -121,18 +121,15 @@ test('play: every client gets the same future start time; stop clears it', async
   const room = newRoom();
   const d = track(await join(srv.wsUrl, room, 'play-drum-1', 'drums'));
   const g = track(await join(srv.wsUrl, room, 'play-gtr-1', 'guitar'));
-  const k = track(await join(srv.wsUrl, room, 'play-keys-1', 'keys'));
   d.c.send({ type: 'setCountInBars', countInBars: 2 });
   await g.c.waitFor((m) => isState(m) && m.state.countInBars === 2);
   const t0 = Date.now();
-  const [pd, pg, pk] = await Promise.all([
+  const [pd, pg] = await Promise.all([
     d.c.request({ type: 'play' }, isPlayback),
     g.c.waitFor(isPlayback, { since: g.c.messages.length }),
-    k.c.waitFor(isPlayback, { since: k.c.messages.length }),
   ]);
   assert.equal(pd.isPlaying, true);
   assert.equal(pd.startServerTime, pg.startServerTime);
-  assert.equal(pd.startServerTime, pk.startServerTime);
   assert.ok(pd.startServerTime >= t0 + 200, 'start leaves time for every client to receive it');
   assert.equal(pd.countInBeats, 8, '2 bars of 4/4 count-in');
   const stop = await d.c.request({ type: 'stop' }, (m) => isPlayback(m) && !m.isPlaying);
@@ -315,12 +312,12 @@ test('cues: text sanitized, broadcast to everyone, history capped at 20', async 
   g.c.send({ type: 'sendCue', text: '   ', cueType: 'section' });
   for (let i = 0; i < 25; i++) g.c.send({ type: 'sendCue', text: `cue ${i}`, cueType: 'section' });
   await d.c.waitFor((m) => m.type === 'cue_broadcast' && m.cue.text === 'cue 24');
-  const again = track(await join(srv.wsUrl, room, 'cue-keys-1', 'keys'));
+  const again = track(await join(srv.wsUrl, room, 'cue-gtr-1', 'guitar'));
   assert.equal(again.state.recentCues.length, 20);
   assert.equal(again.state.recentCues[0].text, 'cue 24');
 });
 
-test('rate limit: a flood is cut with one warning, and the client recovers', async () => {
+test('rate limit: a flood is cut, warnings are suppressed until an accepted ping, and the client recovers', async () => {
   const room = newRoom();
   const d = track(await join(srv.wsUrl, room, 'rate-drum-1', 'drums'));
   const since = d.c.messages.length;
@@ -330,7 +327,14 @@ test('rate limit: a flood is cut with one warning, and the client recovers', asy
   const pongs = after.filter((m) => m.type === 'pong').length;
   const warnings = after.filter((m) => m.code === 'rate_limited').length;
   assert.ok(pongs >= 30 && pongs < 100, `pongs: ${pongs}`);
-  assert.equal(warnings, 1);
+  assert.ok(warnings >= 1);
+  // A busy host may refill a token while processing the burst. Another warning is then valid,
+  // but consecutive rejected messages must not produce repeated warnings.
+  let warned=false;
+  for (const message of after) {
+    if (message.type==='pong') warned=false;
+    if (message.code==='rate_limited') { assert.equal(warned,false); warned=true; }
+  }
   await new Promise((r) => setTimeout(r, 1000));
   assert.ok(await d.c.request({ type: 'ping', clientTime: 1 }, (m) => m.type === 'pong'));
 });

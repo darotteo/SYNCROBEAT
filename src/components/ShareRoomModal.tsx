@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Copy, Check, Share2 } from 'lucide-react';
 import { Button, Modal } from './ui';
+import { Clipboard } from '@capacitor/clipboard';
+import { Share } from '@capacitor/share';
+import { connectionUrls, isNativeApp } from '../utils/mobile';
 
 interface ShareRoomModalProps {
   isOpen: boolean;
@@ -13,9 +16,7 @@ export const ShareRoomModal: React.FC<ShareRoomModalProps> = ({ isOpen, onClose,
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
 
   // In Google AI Studio the "dev-" preview URL is private; the "pre-" one can be opened from other devices
-  const origin = window.location.origin.includes('dev-')
-    ? window.location.origin.replace('dev-', 'pre-')
-    : window.location.origin;
+  const origin = connectionUrls().share;
   const shareUrl = `${origin}/?room=${encodeURIComponent(roomId)}`;
 
   useEffect(() => {
@@ -35,13 +36,17 @@ export const ShareRoomModal: React.FC<ShareRoomModalProps> = ({ isOpen, onClose,
   }, [isOpen, shareUrl]);
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(shareUrl).then(() => {
+    (isNativeApp() ? Clipboard.write({ string: shareUrl }) : navigator.clipboard.writeText(shareUrl)).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
   };
 
   const handleNativeShare = async () => {
+    if (isNativeApp()) {
+      try { await Share.share({ title: `SyncroBeat · Sala ${roomId}`, text: `Entrá a la sala ${roomId} para tocar con el mismo click.`, url: shareUrl }); } catch {}
+      return;
+    }
     if (!navigator.share) {
       handleCopy();
       return;

@@ -7,6 +7,7 @@ import { getClientId } from '../utils/clientId';
 import { cx } from './ui';
 import { SetlistPicker } from './SetlistPicker';
 import { Brand } from './Brand';
+import { apiUrl } from '../utils/mobile';
 
 interface JoinRoomModalProps {
   isOpen: boolean;
@@ -60,6 +61,7 @@ export const JoinRoomModal: React.FC<JoinRoomModalProps> = ({
   const [instrument, setInstrument] = useState<InstrumentType>(() => loadProfile().instrument);
   const [isDrumsTaken, setIsDrumsTaken] = useState(false);
   const [roomHasSetlist, setRoomHasSetlist] = useState(false);
+  const [roomPlan, setRoomPlan] = useState<'free' | 'pro' | null>(null);
   const [selectedSetlist, setSelectedSetlist] = useState<NamedSetlist | undefined>();
 
   // Check whether the room already has a drummer
@@ -69,21 +71,24 @@ export const JoinRoomModal: React.FC<JoinRoomModalProps> = ({
     if (!code) {
       setIsDrumsTaken(false);
       setRoomHasSetlist(false);
+      setRoomPlan(null);
       return;
     }
     let cancelled = false;
     const check = async () => {
       try {
-        const res = await fetch(`/api/rooms/${encodeURIComponent(code)}?clientId=${encodeURIComponent(getClientId())}`);
+        const res = await fetch(apiUrl(`/api/rooms/${encodeURIComponent(code)}?clientId=${encodeURIComponent(getClientId())}`));
         const data = res.ok ? await res.json() : null;
         if (!cancelled) {
           setIsDrumsTaken(Boolean(data?.drumsTaken));
           setRoomHasSetlist(Boolean(data?.setlistCount));
+          setRoomPlan(data?.memberLimit === 2 ? 'free' : data?.plan === 'pro' ? 'pro' : null);
         }
       } catch {
         if (!cancelled) {
           setIsDrumsTaken(false);
           setRoomHasSetlist(false);
+          setRoomPlan(null);
         }
       }
     };
@@ -202,6 +207,7 @@ export const JoinRoomModal: React.FC<JoinRoomModalProps> = ({
           </p>
 
           {error && <p className="text-sm text-rose-300 text-center">{error}</p>}
+          {roomPlan && <p className="text-xs text-neutral-400 text-center">{roomPlan === 'free' ? 'Hasta 2 integrantes gratis por sala. Desde el tercero, SyncroBeat Pro.' : 'Sala Pro habilitada para esta prueba.'}</p>}
         </form>
 
         <SetlistPicker onChange={setSelectedSetlist} canUseInRoom={instrument === 'drums'} roomHasSetlist={roomHasSetlist} />

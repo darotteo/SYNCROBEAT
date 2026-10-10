@@ -61,6 +61,8 @@ export interface PlaybackState {
 }
 
 export interface RoomState extends PlaybackState {
+  plan?: 'free' | 'pro';
+  memberLimit?: number | null;
   roomId: string;
   roomName: string;
   countInBars: number; // 0 = none, 1 = 1 bar, 2 = 2 bars
@@ -82,7 +84,7 @@ export interface NamedSetlist {
 }
 
 export type WSClientMessage =
-  | { type: 'join'; roomId: string; name: string; instrument: InstrumentType; clientId: string; initialSetlist?: NamedSetlist }
+  | { type: 'join'; roomId: string; name: string; instrument: InstrumentType; clientId: string; deviceToken?: string; initialSetlist?: NamedSetlist }
   | { type: 'leave' }
   | { type: 'ping'; clientTime: number }
   | { type: 'report_ping'; pingMs: number }
@@ -100,13 +102,14 @@ export type WSClientMessage =
   | { type: 'updateMember'; name?: string; instrument?: InstrumentType };
 
 export type WSServerMessage =
+  | { type: 'device_session'; deviceToken: string }
   | { type: 'pong'; clientTime: number; serverTime: number }
   | { type: 'room_state'; state: RoomState; yourId: string }
   | ({ type: 'playback_state' } & PlaybackState)
   | { type: 'members_update'; members: MemberInfo[] }
   | { type: 'cue_broadcast'; cue: RehearsalCue }
   | { type: 'song_selected'; song: SongItem }
-  | { type: 'error'; message: string; code?: 'drums_taken' | 'rate_limited' };
+  | { type: 'error'; message: string; code?: 'drums_taken' | 'rate_limited' | 'room_full' | 'identity_conflict' };
 
 export const MIN_BPM = 30;
 export const MAX_BPM = 300;

@@ -25,7 +25,7 @@ export interface RunningServer {
 }
 
 /** Starts the real server.ts in production mode on a free port (BATUTA_TEST_URL reuses an existing one). */
-export async function startServer(): Promise<RunningServer> {
+export async function startServer(extraEnv: Record<string, string> = {}): Promise<RunningServer> {
   if (process.env.BATUTA_TEST_URL) {
     const url = process.env.BATUTA_TEST_URL.replace(/\/$/, '');
     const ws = new URL('/api/ws', url);
@@ -35,7 +35,7 @@ export async function startServer(): Promise<RunningServer> {
   const port = await freePort();
   const proc = spawn(process.execPath, [path.join(root, 'node_modules/tsx/dist/cli.mjs'), 'server.ts', '--prod'], {
     cwd: root,
-    env: { ...process.env, PORT: String(port), NODE_ENV: 'production' },
+    env: { ...process.env, PORT: String(port), NODE_ENV: 'production', ...extraEnv },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let output = '';
@@ -125,12 +125,17 @@ export class Client {
   }
 }
 
+const deviceTokens = new Map<string, string>();
+
 export async function join(wsUrl: string, roomId: string, clientId: string, instrument: string, extra: object = {}) {
   const c = await Client.connect(wsUrl);
+  const tokenKey = `${wsUrl}:${clientId}`;
   const msg = await c.request(
-    { type: 'join', roomId, clientId, name: clientId, instrument, ...extra },
+    { type: 'join', roomId, clientId, name: clientId, instrument, deviceToken: deviceTokens.get(tokenKey), ...extra },
     (m) => (m.type === 'room_state' && m.yourId) || m.type === 'error'
   );
+  const session = c.messages.find((m) => m.type === 'device_session');
+  if (session) deviceTokens.set(tokenKey, session.deviceToken);
   return { c, msg, state: msg.state };
 }
 

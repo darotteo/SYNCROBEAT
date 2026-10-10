@@ -1,6 +1,19 @@
 const CLIENT_ID_KEY = 'syncbeat_client_id';
 
 let memoryId: string | null = null;
+const tokens = new Map<string, string>();
+
+/** A private credential, separate from the public member ID and scoped to one server. */
+export function getDeviceToken(serverOrigin: string): string | undefined {
+  try { return localStorage.getItem(`syncbeat_device_token:${serverOrigin}`) || tokens.get(serverOrigin); }
+  catch { return tokens.get(serverOrigin); }
+}
+
+export function saveDeviceToken(serverOrigin: string, token: string) {
+  if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return;
+  tokens.set(serverOrigin, token);
+  try { localStorage.setItem(`syncbeat_device_token:${serverOrigin}`, token); } catch {}
+}
 
 /** Stable per-device id so a reconnect (phone waking up) reclaims the same seat in the room. */
 export function getClientId(): string {

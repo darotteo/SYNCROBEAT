@@ -4,12 +4,12 @@ import path from 'path';
 import {defineConfig} from 'vite';
 import {VitePWA} from 'vite-plugin-pwa';
 
-export default defineConfig(() => {
+export default defineConfig(({ mode }) => {
   return {
     plugins: [
       react(),
       tailwindcss(),
-      VitePWA({
+      ...(mode === 'mobile' ? [] : [VitePWA({
         registerType: 'autoUpdate',
         includeAssets: [
           'syncrobeat-favicon-32.png',
@@ -90,7 +90,7 @@ export default defineConfig(() => {
         devOptions: {
           enabled: true,
         },
-      }),
+      })]),
     ],
     resolve: {
       alias: {

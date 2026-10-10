@@ -1,0 +1,59 @@
+name: Mobile beta (manual)
+on:
+  workflow_dispatch:
+    inputs:
+      server_url:
+        description: HTTPS origin of the server, without room or trailing path
+        required: true
+        default: https://syncrobeat.onrender.com
+        type: string
+permissions:
+  contents: read
+env:
+  VITE_SYNCROBEAT_API_URL: ${{ inputs.server_url }}
+  VITE_SYNCROBEAT_SHARE_URL: ${{ inputs.server_url }}
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+      - run: npm run lint && npm run test:unit
+      - run: npm run build && npm run test:server
+      - run: npm run mobile:sync
+      - run: chmod +x android/gradlew
+      - run: ./gradlew assembleDebug --no-daemon
+        working-directory: android
+      - uses: actions/upload-artifact@v7
+        with:
+          name: SyncroBeat-Android-beta
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+  ios_compile_check:
+    name: iOS compile check (unsigned, not installable)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run mobile:build && npx cap sync ios
+      - run: xcodebuild -version
+      - run: xcodebuild -project ios/App/App.xcodeproj -scheme App -destination 'generic/platform=iOS' -derivedDataPath work/ios-build CODE_SIGNING_ALLOWED=NO build

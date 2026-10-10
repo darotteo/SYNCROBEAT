@@ -7,5 +7,10 @@ playwright-report/
 blob-report/
 .DS_Store
 *.log
+android/local.properties
+*.keystore
+*.jks
+*.p12
+*.mobileprovision
 .env*
 !.env.example

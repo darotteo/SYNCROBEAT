@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { isNativeApp } from '../utils/mobile';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -17,12 +18,13 @@ if (typeof window !== 'undefined') {
 
 export function usePWAInstall() {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(() => globalDeferredPrompt);
-  const [isInstalled, setIsInstalled] = useState(false);
+  const [isInstalled, setIsInstalled] = useState(isNativeApp);
   const [isIOS, setIsIOS] = useState(false);
   const [canPromptNative, setCanPromptNative] = useState(() => globalDeferredPrompt !== null);
 
   useEffect(() => {
     const isStandalone =
+      isNativeApp() ||
       window.matchMedia('(display-mode: standalone)').matches ||
       window.matchMedia('(display-mode: fullscreen)').matches ||
       (window.navigator as unknown as { standalone?: boolean }).standalone === true;

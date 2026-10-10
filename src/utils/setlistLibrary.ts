@@ -66,8 +66,10 @@ export function getSetlist(id: string | null | undefined): NamedSetlist | undefi
   return id ? loadSetlistLibrary().find((l) => l.id === id) : undefined;
 }
 
+let setlistSequence = 0;
 export function newSetlistId(): string {
-  return `setlist-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return `setlist-${crypto.randomUUID()}`;
+  return `setlist-${Date.now().toString(36)}-${(setlistSequence++).toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
 export function loadLastSelectedSetlistId(): string {

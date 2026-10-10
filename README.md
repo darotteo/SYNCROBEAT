@@ -1,5 +1,7 @@
 # SyncroBeat
 
+Esta copia contiene la beta móvil y el servidor freemium de prueba. Ver [MOBILE.md](MOBILE.md) para el estado real, la instalación y los pendientes. El servicio publicado actualmente no fue actualizado.
+
 **Tu ritmo, siempre.** Metrónomo sincronizado en tiempo real para bandas. El baterista controla el
 tempo y todos los músicos de la sala escuchan el mismo click en su celular, con la misma fase.
 
@@ -29,7 +31,7 @@ Android y un iPhone reales. Es un límite del sistema operativo con las páginas
 sincronía: el audio se genera en cada teléfono (por eso sobrevive), pero la conexión queda suspendida.
 
 Mientras tanto: usar «Mantener pantalla encendida» (en Ajustes de audio) y el Modo atril. La
-solución de fondo es una app nativa, por ejemplo envolviendo esta misma app con Capacitor.
+solución de fondo requiere audio y comunicación en segundo plano con implementación nativa. Envolver la web con Capacitor por sí solo no garantiza ese comportamiento.
 
 ## Cómo funciona la sincronía
 
@@ -42,7 +44,7 @@ solución de fondo es una app nativa, por ejemplo envolviendo esta misma app con
 
 ## Desarrollo
 
-Requiere Node.js 20 o superior.
+Requiere Node.js 22 o superior.
 
 ```bash
 npm install

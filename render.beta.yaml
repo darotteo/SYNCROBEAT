@@ -1,0 +1,22 @@
+# Deploy this copy as a NEW service. Do not replace the live SYNCROBEAT service.
+services:
+  - type: web
+    name: syncrobeat-beta
+    runtime: node
+    plan: free
+    region: oregon
+    numInstances: 1
+    buildCommand: npm ci --omit=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+      - key: SYNCROBEAT_RELEASE_CHANNEL
+        value: beta
+      - key: BETA_PRO_ROOM_CODES
+        value: PRO-TEST
+      - key: NATIVE_APP_ORIGINS
+        value: https://localhost,capacitor://localhost

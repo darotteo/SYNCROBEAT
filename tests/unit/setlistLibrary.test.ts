@@ -14,7 +14,7 @@ let failWrites = false;
 };
 
 const lib = await import('../../src/utils/setlistLibrary.ts');
-const { getClientId } = await import('../../src/utils/clientId.ts');
+const { getClientId, getDeviceToken, saveDeviceToken } = await import('../../src/utils/clientId.ts');
 
 const song = (id: string, bpm = 100) => ({
   id,
@@ -106,4 +106,20 @@ test('client id is stable, valid for the server, and replaced if tampered with',
   const fixed = getClientId();
   assert.match(fixed, /^[A-Za-z0-9-]{8,64}$/);
   assert.equal(store.get('syncbeat_client_id'), fixed);
+});
+
+test('private credentials are scoped to a server and survive storage write failure in this session', () => {
+  const first='https://first.example';
+  const second='https://second.example';
+  const token='a'.repeat(43);
+  saveDeviceToken(first,token);
+  assert.equal(getDeviceToken(first),token);
+  assert.equal(store.get(`syncbeat_device_token:${first}`),token);
+  assert.equal(getDeviceToken(second),undefined);
+  failWrites=true;
+  saveDeviceToken(second,'b'.repeat(43));
+  assert.equal(getDeviceToken(second),'b'.repeat(43));
+  assert.equal(store.has(`syncbeat_device_token:${second}`),false);
+  saveDeviceToken(second,'invalid');
+  assert.equal(getDeviceToken(second),'b'.repeat(43));
 });

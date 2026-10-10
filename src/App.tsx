@@ -15,6 +15,7 @@ import {
 import { useSyncBeat } from './hooks/useSyncBeat';
 import { usePWAInstall } from './hooks/usePWAInstall';
 import { audioEngine } from './utils/audioEngine';
+import { isNativeApp, setNativeScreenAwake } from './utils/mobile';
 import { syncSavedSetlist } from './utils/setlistLibrary';
 import { BeatVisualizer } from './components/BeatVisualizer';
 import { TempoControls } from './components/TempoControls';
@@ -126,6 +127,10 @@ export default function App() {
 
   // Keep the screen on while in a room
   useEffect(() => {
+    if (isNativeApp()) {
+      setNativeScreenAwake(Boolean(room) && keepScreenAwake);
+      return () => setNativeScreenAwake(false);
+    }
     if (!room || !keepScreenAwake || !('wakeLock' in navigator)) return;
     let wakeLock: WakeLockSentinel | null = null;
     let cancelled = false;
