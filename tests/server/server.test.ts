@@ -118,6 +118,26 @@ test('the host can hand the room to a musician who is not the drummer', async ()
   assert.equal(meta.bpm, 96);
 });
 
+test('a room holds three musicians; the fourth is told what is coming, and a rejoin is not a fourth', async () => {
+  const room = newRoom();
+  const d = track(await join(srv.wsUrl, room, 'cap-drum', 'drums'));
+  track(await join(srv.wsUrl, room, 'cap-guitar', 'guitar'));
+  track(await join(srv.wsUrl, room, 'cap-bass', 'bass'));
+
+  const fourth = await join(srv.wsUrl, room, 'cap-keys', 'keys');
+  track(fourth);
+  assert.equal(fourth.msg.code, 'room_full');
+  assert.match(fourth.msg.message, /hasta 3/i);
+  // The refusal must not cost the trio anything
+  assert.equal((await fetch(`${srv.url}/api/rooms/${room}`).then((r) => r.json())).membersCount, 3);
+
+  // A phone waking up rejoins its own rehearsal: its seat is already taken by itself
+  const back = track(await join(srv.wsUrl, room, 'cap-guitar', 'guitar'));
+  assert.ok(back.state, 'a reconnecting member is let back in');
+  assert.equal(back.state.members.length, 3, 'and does not take a second seat');
+  assert.ok(await d.c.expectNothing(isError, 200));
+});
+
 test('only one drummer per room; the same device can reclaim its seat', async () => {
   const room = newRoom();
   const d1 = track(await join(srv.wsUrl, room, 'seat-drum-1', 'drums'));

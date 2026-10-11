@@ -39,6 +39,13 @@ const EMPTY_ROOM_TTL_MS = 30 * 60_000;
 const RATE_BUCKET_SIZE = 40;
 const RATE_REFILL_PER_SEC = 20;
 const MAX_MESSAGE_BYTES = 256 * 1024;
+/**
+ * How many musicians fit in one room. Three is a whole band for a trio, so the product can be felt
+ * in full for free, and it sets the expectation that rooms have a size before SyncroBeat Pro opens
+ * them up. The limit lives here, on the server: lowering it later applies to everyone at once,
+ * with nothing to update on anybody's phone.
+ */
+const FREE_ROOM_MEMBERS = 3;
 
 const app = express();
 const server = http.createServer(app);
@@ -595,6 +602,19 @@ function handleJoin(ctx: ClientContext, msg: Extract<WSClientMessage, { type: 'j
 
   if (instrument === 'drums' && room.members.some((m) => m.instrument === 'drums' && m.id !== ctx.id)) {
     send(ws, { type: 'error', code: 'drums_taken', message: 'Ya hay un baterista en esta sala.' });
+    if (room.members.length === 0) roomEmptySince.set(roomId, Date.now());
+    return;
+  }
+
+  // Someone already in the room is reconnecting, not arriving: their seat is theirs and does not
+  // count again. Without this a phone waking up would be refused entry to its own rehearsal.
+  const alreadyMember = room.members.some((m) => m.id === ctx.id);
+  if (!alreadyMember && room.members.length >= FREE_ROOM_MEMBERS) {
+    send(ws, {
+      type: 'error',
+      code: 'room_full',
+      message: `Por ahora las salas son de hasta ${FREE_ROOM_MEMBERS} músicos. Muy pronto vas a poder sumar a toda la banda.`,
+    });
     if (room.members.length === 0) roomEmptySince.set(roomId, Date.now());
     return;
   }

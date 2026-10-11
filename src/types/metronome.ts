@@ -107,7 +107,7 @@ export type WSServerMessage =
   | { type: 'members_update'; members: MemberInfo[] }
   | { type: 'cue_broadcast'; cue: RehearsalCue }
   | { type: 'song_selected'; song: SongItem }
-  | { type: 'error'; message: string; code?: 'drums_taken' | 'rate_limited' };
+  | { type: 'error'; message: string; code?: 'drums_taken' | 'rate_limited' | 'room_full' };
 
 export const MIN_BPM = 30;
 export const MAX_BPM = 300;

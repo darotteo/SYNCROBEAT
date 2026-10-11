@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { WifiOff, Download, RefreshCw } from 'lucide-react';
+import { WifiOff, Download, RefreshCw, Mic, ChevronDown } from 'lucide-react';
 import { InstrumentType, INSTRUMENT_TYPES, NamedSetlist } from '../types/metronome';
 import { INSTRUMENT_METADATA } from './InstrumentIcon';
 import { audioEngine } from '../utils/audioEngine';
@@ -7,6 +7,7 @@ import { getClientId } from '../utils/clientId';
 import { cx } from './ui';
 import { SetlistPicker } from './SetlistPicker';
 import { Brand } from './Brand';
+import { TunerPanel } from './TunerPanel';
 
 interface JoinRoomModalProps {
   isOpen: boolean;
@@ -60,6 +61,7 @@ export const JoinRoomModal: React.FC<JoinRoomModalProps> = ({
   const [instrument, setInstrument] = useState<InstrumentType>(() => loadProfile().instrument);
   const [isDrumsTaken, setIsDrumsTaken] = useState(false);
   const [roomHasSetlist, setRoomHasSetlist] = useState(false);
+  const [showTuner, setShowTuner] = useState(false);
   // Nobody inside yet, so this join opens the room and gets to run it
   const [willOpenRoom, setWillOpenRoom] = useState(true);
   const [selectedSetlist, setSelectedSetlist] = useState<NamedSetlist | undefined>();
@@ -208,6 +210,24 @@ export const JoinRoomModal: React.FC<JoinRoomModalProps> = ({
         </form>
 
         <SetlistPicker onChange={setSelectedSetlist} canUseInRoom={willOpenRoom} roomHasSetlist={roomHasSetlist} />
+
+        {/* Collapsed by default: useful before a rehearsal, but it must not push the room code and
+            the Entrar button off the screen on a phone. */}
+        <section>
+          <button
+            type="button"
+            onClick={() => setShowTuner((v) => !v)}
+            aria-expanded={showTuner}
+            className="w-full flex items-center justify-between py-2 text-xs font-medium uppercase tracking-[0.12em] text-neutral-500 hover:text-neutral-300 transition-colors"
+          >
+            <span className="flex items-center gap-2">
+              <Mic className="w-3.5 h-3.5" />
+              Afinador
+            </span>
+            <ChevronDown className={cx('w-4 h-4 transition-transform', showTuner && 'rotate-180')} />
+          </button>
+          {showTuner && <TunerPanel isPlaying={false} />}
+        </section>
 
           <button
             type="submit"
