@@ -25,8 +25,19 @@ function getPool(): pg.Pool {
   if (!pool) {
     pool = new pg.Pool({
       connectionString: process.env.DATABASE_URL,
-      // Managed Postgres (Neon, Supabase, Render) terminates TLS with its own chain
-      ssl: process.env.DATABASE_SSL === 'off' ? undefined : { rejectUnauthorized: false },
+      // Left to the connection string's own sslmode, which verifies the server's certificate.
+      // Encrypting without verifying protects nothing from someone who can intercept the
+      // connection: they present their own certificate and read the password along with everything
+      // else. Neon, Supabase and Render all use certificates that verify normally.
+      // DATABASE_SSL=insecure is the escape hatch for a provider with a self-signed certificate,
+      // and DATABASE_SSL=off is for a Postgres on the same machine with no TLS at all.
+      // Stated here rather than left to the connection string's sslmode, which pg has announced it
+      // will reinterpret more weakly in a future major version: an upgrade would then quietly stop
+      // verifying anything.
+      ssl:
+        process.env.DATABASE_SSL === 'off'
+          ? false
+          : { rejectUnauthorized: process.env.DATABASE_SSL !== 'insecure' },
       max: 4,
       // A hosted free tier sleeps between rehearsals; the first query has to wait for the wake-up
       connectionTimeoutMillis: 10_000,
